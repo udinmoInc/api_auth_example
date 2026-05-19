@@ -109,7 +109,9 @@ export class AuthService {
 
   // Refresh token rotation with replay protection and concurrent request grace period
   public async rotateTokens(oldRefreshToken: string, device: DeviceMetadata) {
-    const redisValue = await redisClient.get(`blacklist:${oldRefreshToken}`);
+    const redisValue = config.features.enableCache
+      ? await redisClient.get(`blacklist:${oldRefreshToken}`)
+      : null;
     
     if (redisValue) {
       // If within 15s grace period, it contains the JSON string of the newly generated token pair.
@@ -177,7 +179,7 @@ export class AuthService {
     const remainingTtlMs = session.expiresAt.getTime() - Date.now();
     const GRACE_PERIOD_MS = 15000; // 15 seconds grace period
     
-    if (remainingTtlMs > 0) {
+    if (remainingTtlMs > 0 && config.features.enableCache) {
       // Ensure the grace period cache never extends the lifespan of an expiring refresh token
       const pxExpiry = Math.min(GRACE_PERIOD_MS, remainingTtlMs);
 
@@ -195,7 +197,7 @@ export class AuthService {
     if (!session) return;
 
     const remainingTtlMs = session.expiresAt.getTime() - Date.now();
-    if (remainingTtlMs > 0) {
+    if (remainingTtlMs > 0 && config.features.enableCache) {
       await redisClient.set(`blacklist:${refreshToken}`, 'true', {
         PX: remainingTtlMs,
       });
@@ -297,7 +299,7 @@ export class AuthService {
     }
 
     const remainingTtlMs = session.expiresAt.getTime() - Date.now();
-    if (remainingTtlMs > 0 && session.refreshToken) {
+    if (remainingTtlMs > 0 && session.refreshToken && config.features.enableCache) {
       await redisClient.set(`blacklist:${session.refreshToken}`, 'true', {
         PX: remainingTtlMs,
       });

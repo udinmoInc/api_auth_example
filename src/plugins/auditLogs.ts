@@ -1,6 +1,7 @@
 import { Express } from 'express';
 import { pluginRegistry, AppPlugin } from '@/lib/plugins';
 import { authEvents } from '@/lib/events';
+import config from '@/config';
 import logger from '@/utils/logger';
 
 // Concrete, production-ready audit logging extension
@@ -48,6 +49,9 @@ export const auditLogsPlugin: AppPlugin = {
   },
 };
 
-// Register plugin dynamically with core registry
-pluginRegistry.register(auditLogsPlugin);
+// Register plugin dynamically with core registry ONLY if feature flag is active
+if (config.features.enableAuditLogs) {
+  pluginRegistry.register(auditLogsPlugin);
+}
+
 export default auditLogsPlugin;

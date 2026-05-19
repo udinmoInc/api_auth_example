@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.auditLogsPlugin = void 0;
 const plugins_1 = require("@/lib/plugins");
 const events_1 = require("@/lib/events");
+const config_1 = __importDefault(require("@/config"));
 const logger_1 = __importDefault(require("@/utils/logger"));
 // Concrete, production-ready audit logging extension
 exports.auditLogsPlugin = {
@@ -46,6 +47,8 @@ exports.auditLogsPlugin = {
         });
     },
 };
-// Register plugin dynamically with core registry
-plugins_1.pluginRegistry.register(exports.auditLogsPlugin);
+// Register plugin dynamically with core registry ONLY if feature flag is active
+if (config_1.default.features.enableAuditLogs) {
+    plugins_1.pluginRegistry.register(exports.auditLogsPlugin);
+}
 exports.default = exports.auditLogsPlugin;

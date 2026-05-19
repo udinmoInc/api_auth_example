@@ -28,6 +28,12 @@ const envSchema = z.object({
   RATE_LIMIT_WINDOW_MS: z.string().default('900000').transform((val) => parseInt(val, 10)),
   RATE_LIMIT_MAX: z.string().default('100').transform((val) => parseInt(val, 10)),
   COOKIES_SECURE: z.string().default('false').transform((val) => val === 'true'),
+
+  // Config-driven dynamic production / development architecture flags
+  ENABLE_LOGGER: z.string().default('true').transform((val) => val === 'true'),
+  ENABLE_AUDIT_LOGS: z.string().default('true').transform((val) => val === 'true'),
+  ENABLE_TRACING: z.string().default('true').transform((val) => val === 'true'),
+  ENABLE_CACHE: z.string().default('true').transform((val) => val === 'true'),
 });
 
 const parseEnv = () => {
@@ -73,6 +79,14 @@ export const config = {
     rateLimitWindowMs: env.RATE_LIMIT_WINDOW_MS,
     rateLimitMax: env.RATE_LIMIT_MAX,
     cookiesSecure: env.COOKIES_SECURE,
+  },
+  logging: {
+    enableLogger: env.ENABLE_LOGGER,
+    enableTracing: env.ENABLE_TRACING,
+  },
+  features: {
+    enableAuditLogs: env.ENABLE_AUDIT_LOGS,
+    enableCache: env.ENABLE_CACHE,
   },
 };
 

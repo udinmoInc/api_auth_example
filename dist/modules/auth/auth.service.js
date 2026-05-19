@@ -88,7 +88,9 @@ class AuthService {
     }
     // Refresh token rotation with replay protection and concurrent request grace period
     async rotateTokens(oldRefreshToken, device) {
-        const redisValue = await redis_1.redisClient.get(`blacklist:${oldRefreshToken}`);
+        const redisValue = config_1.default.features.enableCache
+            ? await redis_1.redisClient.get(`blacklist:${oldRefreshToken}`)
+            : null;
         if (redisValue) {
             // If within 15s grace period, it contains the JSON string of the newly generated token pair.
             // We return these cached tokens to handle concurrent refreshes seamlessly.
@@ -143,7 +145,7 @@ class AuthService {
         });
         const remainingTtlMs = session.expiresAt.getTime() - Date.now();
         const GRACE_PERIOD_MS = 15000; // 15 seconds grace period
-        if (remainingTtlMs > 0) {
+        if (remainingTtlMs > 0 && config_1.default.features.enableCache) {
             // Ensure the grace period cache never extends the lifespan of an expiring refresh token
             const pxExpiry = Math.min(GRACE_PERIOD_MS, remainingTtlMs);
             // Keep the new tokens in Redis for the first 15s so concurrent requests get the same tokens
@@ -158,7 +160,7 @@ class AuthService {
         if (!session)
             return;
         const remainingTtlMs = session.expiresAt.getTime() - Date.now();
-        if (remainingTtlMs > 0) {
+        if (remainingTtlMs > 0 && config_1.default.features.enableCache) {
             await redis_1.redisClient.set(`blacklist:${refreshToken}`, 'true', {
                 PX: remainingTtlMs,
             });
@@ -239,7 +241,7 @@ class AuthService {
             throw new errors_1.ApiError(404, 'Session not found.');
         }
         const remainingTtlMs = session.expiresAt.getTime() - Date.now();
-        if (remainingTtlMs > 0 && session.refreshToken) {
+        if (remainingTtlMs > 0 && session.refreshToken && config_1.default.features.enableCache) {
             await redis_1.redisClient.set(`blacklist:${session.refreshToken}`, 'true', {
                 PX: remainingTtlMs,
             });
