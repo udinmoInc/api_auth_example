@@ -1,0 +1,78 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+model User {
+  id                         String    @id @default(uuid())
+  email                      String    @unique
+  passwordHash               String
+  role                       Role      @default(USER)
+  isEmailVerified            Boolean   @default(false)
+  verificationToken          String?   @unique
+  verificationTokenExpiresAt DateTime?
+  passwordResetToken         String?   @unique
+  passwordResetTokenExpiresAt DateTime?
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
+  
+  profile                    Profile?
+  sessions                   Session[]
+
+  @@index([email])
+  @@index([verificationToken])
+  @@index([passwordResetToken])
+  @@map("users")
+}
+
+model Profile {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firstName   String?
+  lastName    String?
+  avatarUrl   String?
+  phoneNumber String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("profiles")
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Token rotation tracking
+  tokenFamily  String   // Groups rotated refresh tokens belonging to the same login session
+  refreshToken String   @unique // The currently active refresh token for this session
+  
+  // Device & Network information for session monitoring
+  ipAddress    String?
+  userAgent    String?
+  device       String?  // Desktop, Mobile, Tablet, Bot
+  os           String?  // Windows, macOS, iOS, Android, Linux
+  browser      String?  // Chrome, Safari, Firefox, Edge
+  
+  isValid      Boolean  @default(true)
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+  @@index([refreshToken])
+  @@index([tokenFamily])
+  @@map("sessions")
+}

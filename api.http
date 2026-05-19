@@ -1,0 +1,58 @@
+### API Request Sandbox
+@baseUrl = http://localhost:5000/api/v1
+@contentType = application/json
+
+### Health Check
+GET {{baseUrl}}/health
+
+### 1. Register Account
+# @name register
+POST {{baseUrl}}/auth/register
+Content-Type: {{contentType}}
+
+{
+  "email": "vijay@example.com",
+  "password": "SecurePassword123!",
+  "firstName": "Vijay",
+  "lastName": "Singh",
+  "phoneNumber": "+1234567890"
+}
+
+### 2. Login Account
+# @name login
+POST {{baseUrl}}/auth/login
+Content-Type: {{contentType}}
+
+{
+  "email": "vijay@example.com",
+  "password": "SecurePassword123!"
+}
+
+### Save Token from Login response
+@accessToken = {{login.response.body.data.accessToken}}
+
+### 3. Active Sessions (Requires Bearer Token)
+GET {{baseUrl}}/auth/sessions
+Authorization: Bearer {{accessToken}}
+
+### 4. Rotate Session (Refresh Tokens)
+POST {{baseUrl}}/auth/refresh
+Content-Type: {{contentType}}
+
+# Note: The refresh endpoint reads the HTTP-Only cookie automatically.
+# You can also pass it in the JSON body if test environments require it.
+{
+  "refreshToken": ""
+}
+
+### 5. Forgot Password Reset Request
+POST {{baseUrl}}/auth/forgot-password
+Content-Type: {{contentType}}
+
+{
+  "email": "vijay@example.com"
+}
+
+### 6. Log Out Session
+POST {{baseUrl}}/auth/logout
+Content-Type: {{contentType}}
