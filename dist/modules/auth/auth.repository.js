@@ -25,7 +25,7 @@ class AuthRepository {
         });
     }
     /**
-     * Atomically create a user and their profile in a database transaction
+     * Atomically create a user, their profile, a default workspace, and owner membership in a transaction
      */
     async createUser(input, passwordHash, verificationToken, expiresAt) {
         return prisma_1.default.$transaction(async (tx) => {
@@ -43,6 +43,23 @@ class AuthRepository {
                     firstName: input.firstName || null,
                     lastName: input.lastName || null,
                     phoneNumber: input.phoneNumber || null,
+                },
+            });
+            // Generate an extensible personal B2B workspace context
+            const workspaceName = input.firstName ? `${input.firstName}'s Workspace` : 'My Workspace';
+            const slugSuffix = Math.random().toString(36).substring(2, 7);
+            const cleanSlug = `${input.email.split('@')[0]}-workspace-${slugSuffix}`;
+            const workspace = await tx.workspace.create({
+                data: {
+                    name: workspaceName,
+                    slug: cleanSlug,
+                },
+            });
+            await tx.workspaceMember.create({
+                data: {
+                    workspaceId: workspace.id,
+                    userId: user.id,
+                    role: 'OWNER',
                 },
             });
             return { ...user, profile };
