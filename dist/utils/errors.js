@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.AppError = exports.InternalServerError = exports.ConflictError = exports.NotFoundError = exports.ForbiddenError = exports.UnauthorizedError = exports.BadRequestError = exports.ApiError = void 0;
+exports.InternalServerError = exports.ConflictError = exports.NotFoundError = exports.ForbiddenError = exports.UnauthorizedError = exports.BadRequestError = exports.ApiError = void 0;
 class ApiError extends Error {
     statusCode;
     errors;
@@ -55,27 +55,3 @@ class InternalServerError extends ApiError {
     }
 }
 exports.InternalServerError = InternalServerError;
-// Correcting the HTTP status codes:
-// Unauthorized: 401
-// Forbidden: 403
-class AppError extends ApiError {
-    static badRequest(msg, errs = []) {
-        return new ApiError(400, msg, errs);
-    }
-    static unauthorized(msg = 'Unauthorized') {
-        return new ApiError(401, msg);
-    }
-    static forbidden(msg = 'Forbidden') {
-        return new ApiError(403, msg);
-    }
-    static notFound(msg = 'Not Found') {
-        return new ApiError(404, msg);
-    }
-    static conflict(msg = 'Conflict') {
-        return new ApiError(409, msg);
-    }
-    static internal(msg = 'Internal Server Error') {
-        return new ApiError(500, msg, [], false);
-    }
-}
-exports.AppError = AppError;
