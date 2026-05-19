@@ -15,7 +15,7 @@ const pool = new Pool({
   connectionString,
   max: config.env === 'production' ? 20 : 5,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  connectionTimeoutMillis: 10000, // Allow up to 10 seconds for serverless database cold starts
   maxUses: 7500, // Prevent socket leakage by recycling connections
 });
 const adapter = new PrismaPg(pool);
