@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/banner.png" width="100%" alt="Enterprise SaaS Auth Backend Banner" style="border-radius: 8px;" />
+  <img src="https://images.unsplash.com/photo-1614064641938-3bbee52942c7?auto=format&fit=crop&w=1200&q=80" width="100%" alt="Enterprise SaaS Auth Backend Banner" style="border-radius: 8px;" />
 </p>
 
 # 🔐 Enterprise SaaS Authentication Server
