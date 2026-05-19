@@ -2,7 +2,7 @@
   <img src="./docs/img/banner.png" width="100%" alt="Enterprise SaaS Auth Backend Banner" style="border-radius: 8px;" />
 </p>
 
-# 🔐 Enterprise SaaS Authentication Server
+# 🔐 Reusable SaaS Authentication Starter Template
 
 <p align="center">
   <a href="https://github.com/udinmoInc/api_auth_example">
@@ -15,8 +15,18 @@
 </p>
 
 <p align="center">
-  A production-focused, state-of-the-art authentication engine built with <b>Express.js</b>, <b>TypeScript</b>, <b>Prisma ORM v7</b>, <b>PostgreSQL</b>, and <b>Redis</b>. Designed to deliver optimal performance, security, and a seamless developer experience.
+  A production-ready, highly flexible authentication boilerplate built with <b>Express.js</b>, <b>TypeScript</b>, <b>Prisma ORM v7</b>, <b>PostgreSQL</b>, and <b>Redis</b>. Designed as an unopinionated starter template, it isolates authentication completely so you can drop it directly into any client, SaaS, or multi-tenant system.
 </p>
+
+---
+
+## 🎨 Purpose & Flexibility
+
+This project is built explicitly as a **reusable authentication template**, not a fixed business schema. 
+
+* **No Opinionated Business Models**: You won't find custom e-commerce, blogging, or company-specific structures here.
+* **Open for Customization**: Fully MIT licensed, allowing you to adapt it to any architectural requirement (B2B, B2C, single-tenant, or multi-tenant).
+* **Extensible & Plugin-Friendly**: Isolates the core JWT token, session management, and authentication guards so you can plug other application modules (subscriptions, workspaces, user dashboards) directly on top.
 
 ---
 
@@ -37,9 +47,9 @@
 
 * **Double-Layer Stateful JWTs**: Access tokens are signed statelessly but cross-checked against a database `Session` pool on every request, allowing instantaneous remote revokes and password updates.
 * **Token Rotation (RTR)**: Generates a brand new refresh token with every renew request. Prevents session theft and man-in-the-middle attacks.
-* **Automatic Replay Protection**: If a previously rotated refresh token is submitted, the server instantly detects a reuse attack, revokes the **entire session family tree**, and forces a global logout across all linked devices.
+* **Grace-Period Race Mitigation**: Implements a 15-second cache grace period for rotated refresh tokens to prevent parallel client network requests or double-clicks from throwing accidental replay attack logouts.
 * **Secure Cookie Storage**: Refresh tokens are stored in browser cookies under strict `httpOnly`, `sameSite: 'strict'`, and `secure: true` (in production) flags, shielding against XSS and CSRF.
-* **Aggressive IP Rate-Limiting**: Global request limiting combined with strict authentication endpoint limits (10 attempts per 15 minutes) to neutralize credential stuffing.
+* **Aggressive IP Rate-Limiting**: Global request limiting combined with strict authentication endpoint limits (10 attempts per 15 minutes) to neutralize brute-force attacks.
 * **Modern Prisma 7 Driver Adapters**: Integrates the native `@prisma/adapter-pg` driver adapter and connection pool, eliminating heavy database binaries and reducing runtime container memory footprint.
 
 ---
@@ -151,71 +161,7 @@ Use the preconfigured [api.http](./api.http) requests dashboard (fully compatibl
 
 ---
 
-## 📝 Hand-Written Code Samples
-
-<details>
-<summary><b>🛡️ Click to view strict Zod request schema validation</b></summary>
-<br/>
-
-```typescript
-import { z } from 'zod';
-
-export const signUpSchema = z.object({
-  email: z.string().email('Invalid email address'),
-  password: z
-    .string()
-    .min(12, 'Password must be at least 12 characters long')
-    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
-    .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
-    .regex(/[0-9]/, 'Password must contain at least one number')
-    .regex(/[^A-Za-z0-9]/, 'Password must contain at least one special character'),
-  firstName: z.string().min(1, 'First name is required'),
-  lastName: z.string().min(1, 'Last name is required'),
-  phoneNumber: z.string().optional(),
-});
-```
-
-</details>
-
-<details>
-<summary><b>🔑 Click to view advanced stateful session guard</b></summary>
-<br/>
-
-```typescript
-export const authenticate = asyncHandler(async (req: Request, _res: Response, next: NextFunction) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    throw new ApiError(401, 'Authentication failed. Bearer token required.');
-  }
-
-  const token = authHeader.split(' ')[1];
-  let decoded: TokenPayload;
-  
-  try {
-    decoded = jwt.verify(token, config.jwt.accessSecret) as TokenPayload;
-  } catch (error) {
-    throw new ApiError(401, 'Invalid or expired access token.');
-  }
-
-  // Double-Safety Stateful Check
-  const session = await prisma.session.findUnique({
-    where: { id: decoded.sessionId },
-  });
-
-  if (!session || !session.isValid) {
-    throw new ApiError(401, 'Session has been revoked or expired.');
-  }
-
-  req.user = decoded;
-  next();
-});
-```
-
-</details>
-
----
-
 ## 📄 License
-This repository is licensed under the **MIT License**. For details, see the [LICENSE](./LICENSE) file.
+This repository is open-source and available under the **MIT License**. Feel free to fork, customize, and extend it for any SaaS or client project. For details, see the [LICENSE](./LICENSE) file.
 
 Copyright (c) 2026 APIOrbit

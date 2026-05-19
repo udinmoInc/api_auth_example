@@ -21,23 +21,22 @@ enum AuthProvider {
 }
 
 model User {
-  id                          String            @id @default(uuid())
-  email                       String            @unique
+  id                          String       @id @default(uuid())
+  email                       String       @unique
   passwordHash                String
-  role                        Role              @default(USER)
-  provider                    AuthProvider      @default(CREDENTIALS)
-  providerId                  String?           @unique
-  isEmailVerified             Boolean           @default(false)
-  verificationToken           String?           @unique
+  role                        Role         @default(USER)
+  provider                    AuthProvider @default(CREDENTIALS)
+  providerId                  String?      @unique
+  isEmailVerified             Boolean      @default(false)
+  verificationToken           String?      @unique
   verificationTokenExpiresAt  DateTime?
-  passwordResetToken          String?           @unique
+  passwordResetToken          String?      @unique
   passwordResetTokenExpiresAt DateTime?
-  createdAt                   DateTime          @default(now())
-  updatedAt                   DateTime          @updatedAt
+  createdAt                   DateTime     @default(now())
+  updatedAt                   DateTime     @updatedAt
   
   profile                     Profile?
   sessions                    Session[]
-  workspaces                  WorkspaceMember[]
 
   @@index([email])
   @@index([verificationToken])
@@ -84,54 +83,4 @@ model Session {
   @@index([refreshToken])
   @@index([tokenFamily])
   @@map("sessions")
-}
-
-// B2B SaaS Multi-Tenant Workspace Layout
-model Workspace {
-  id                 String             @id @default(uuid())
-  name               String
-  slug               String             @unique
-  subscriptionTier   SubscriptionTier   @default(FREE)
-  subscriptionStatus SubscriptionStatus @default(ACTIVE)
-  stripeCustomerId   String?            @unique
-  stripeSubscriptionId String?          @unique
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
-  members            WorkspaceMember[]
-
-  @@map("workspaces")
-}
-
-enum WorkspaceRole {
-  OWNER
-  ADMIN
-  MEMBER
-}
-
-enum SubscriptionTier {
-  FREE
-  PRO
-  ENTERPRISE
-}
-
-enum SubscriptionStatus {
-  ACTIVE
-  TRIALING
-  PAST_DUE
-  CANCELED
-  UNPAID
-}
-
-model WorkspaceMember {
-  id          String        @id @default(uuid())
-  workspaceId String
-  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  userId      String
-  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role        WorkspaceRole @default(MEMBER)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-
-  @@unique([workspaceId, userId])
-  @@map("workspace_members")
 }
