@@ -2,39 +2,34 @@ import { Express } from 'express';
 import { pluginRegistry, AppPlugin } from '@/lib/plugins';
 import { authEvents } from '@/lib/events';
 import config from '@/config';
+import { ROUTES } from '@/constants';
 import logger from '@/utils/logger';
 
-// Concrete, production-ready audit logging extension
 export const auditLogsPlugin: AppPlugin = {
   name: 'AuditLogsExtension',
   init: (app: Express) => {
-    // 1. Audit Signups
     authEvents.on('signup', (user) => {
-      logger.info(`📝 [AUDIT] User Registered: ${user.email} (UID: ${user.userId})`);
+      logger.info(`[AUDIT] User registered: ${user.email} (UID: ${user.userId})`);
     });
 
-    // 2. Audit Logins
     authEvents.on('login', (data) => {
-      logger.info(`🔐 [AUDIT] Successful Sign-In: ${data.email} from IP: ${data.ipAddress || 'Unknown'} (Device: ${data.device || 'Unknown'})`);
+      logger.info(`[AUDIT] Successful sign-in: ${data.email} from IP: ${data.ipAddress || 'Unknown'} (Device: ${data.device || 'Unknown'})`);
     });
 
-    // 3. Audit Logouts
     authEvents.on('logout', (session) => {
-      logger.info(`🛑 [AUDIT] Session Logged Out: User ID ${session.userId} terminated Session ID ${session.sessionId}`);
+      logger.info(`[AUDIT] Session logged out: User ID ${session.userId} terminated Session ID ${session.sessionId}`);
     });
 
-    // 4. Audit Password Changes
     authEvents.on('passwordReset', (data) => {
-      logger.info(`🔑 [AUDIT] Password Reset Successful for User ID: ${data.userId}`);
+      logger.info(`[AUDIT] Password reset successful for User ID: ${data.userId}`);
     });
 
-    // 5. Audit Session Revocation
     authEvents.on('sessionRevoked', (data) => {
-      logger.info(`⚠️ [AUDIT] Remote Session Revoked: User ID ${data.userId} closed Session ID ${data.sessionId}`);
+      logger.info(`[AUDIT] Remote session revoked: User ID ${data.userId} closed Session ID ${data.sessionId}`);
     });
 
-    // Register a mock dashboard route to demonstrate dynamic routing extensions
-    app.get('/api/v1/plugins/audit-logs/health', (_req, res) => {
+    // Expose dynamic diagnostic endpoint
+    app.get(`/api/${config.apiVersion}${ROUTES.PLUGINS}/audit-logs/health`, (_req, res) => {
       res.status(200).json({
         status: 'active',
         listeners: {
@@ -49,7 +44,6 @@ export const auditLogsPlugin: AppPlugin = {
   },
 };
 
-// Register plugin dynamically with core registry ONLY if feature flag is active
 if (config.features.enableAuditLogs) {
   pluginRegistry.register(auditLogsPlugin);
 }

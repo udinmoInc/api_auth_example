@@ -9,9 +9,15 @@ declare global {
   var prisma: PrismaClient | undefined;
 }
 
-// In Prisma 7, a driver adapter must be instantiated and passed at runtime
+// node-pg connection pooling driver setup
 const connectionString = config.db.url;
-const pool = new Pool({ connectionString });
+const pool = new Pool({
+  connectionString,
+  max: config.env === 'production' ? 20 : 5,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
+  maxUses: 7500, // Prevent socket leakage by recycling connections
+});
 const adapter = new PrismaPg(pool);
 
 export const prisma =
@@ -31,7 +37,7 @@ export const prisma =
 if (config.env === 'development') {
   global.prisma = prisma;
   
-  // Log queries in development
+  // Latency metrics logging in development
   (prisma as any).$on('query', (e: any) => {
     logger.debug(`Prisma Query: ${e.query} | Params: ${e.params} | Duration: ${e.duration}ms`);
   });

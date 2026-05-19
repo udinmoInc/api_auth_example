@@ -4,7 +4,7 @@ import { contextStore } from '@/lib/context';
 import config from '@/config';
 import logger from '@/utils/logger';
 
-export const requestLogger = (req: Request, res: Response, next: NextFunction) => {
+export const requestLogger = (req: Request, res: Response, next: NextFunction): void => {
   const start = Date.now();
   
   const onFinish = () => {
@@ -23,7 +23,7 @@ export const requestLogger = (req: Request, res: Response, next: NextFunction) =
     }
   };
 
-  // Perform context wrapping and Correlation ID assignment only if telemetry tracing is active
+  // Trace correlation logging
   if (config.logging.enableTracing) {
     const requestId = (req.headers['x-request-id'] as string) || uuidv4();
     res.setHeader('X-Request-Id', requestId);

@@ -1,54 +1,15 @@
-import dotenv from 'dotenv';
-import { z } from 'zod';
+import env from './env';
 
-// Load environment variables from .env file
-dotenv.config();
-
-const envSchema = z.object({
-  PORT: z.string().default('5000').transform((val) => parseInt(val, 10)),
-  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-  API_VERSION: z.string().default('v1'),
-  FRONTEND_URL: z.string().url(),
-  
-  DATABASE_URL: z.string().url(),
-  REDIS_URL: z.string().url(),
-
-  JWT_ACCESS_SECRET: z.string().min(32, 'Access token secret must be at least 32 characters long'),
-  JWT_ACCESS_EXPIRY: z.string().default('15m'),
-  JWT_REFRESH_SECRET: z.string().min(32, 'Refresh token secret must be at least 32 characters long'),
-  JWT_REFRESH_EXPIRY: z.string().default('7d'),
-
-  SMTP_HOST: z.string(),
-  SMTP_PORT: z.string().transform((val) => parseInt(val, 10)),
-  SMTP_USER: z.string(),
-  SMTP_PASS: z.string(),
-  SMTP_FROM: z.string(),
-
-  CORS_ORIGIN: z.string(),
-  RATE_LIMIT_WINDOW_MS: z.string().default('900000').transform((val) => parseInt(val, 10)),
-  RATE_LIMIT_MAX: z.string().default('100').transform((val) => parseInt(val, 10)),
-  COOKIES_SECURE: z.string().default('false').transform((val) => val === 'true'),
-
-  // Config-driven dynamic production / development architecture flags
-  ENABLE_LOGGER: z.string().default('true').transform((val) => val === 'true'),
-  ENABLE_AUDIT_LOGS: z.string().default('true').transform((val) => val === 'true'),
-  ENABLE_TRACING: z.string().default('true').transform((val) => val === 'true'),
-  ENABLE_CACHE: z.string().default('true').transform((val) => val === 'true'),
-});
-
-const parseEnv = () => {
-  const result = envSchema.safeParse(process.env);
-
-  if (!result.success) {
-    console.error('❌ Environment validation failed:');
-    console.error(JSON.stringify(result.error.format(), null, 2));
-    process.exit(1);
+const parseExpiryToMs = (expiry: string): number => {
+  const unit = expiry.slice(-1);
+  const value = parseInt(expiry.slice(0, -1), 10);
+  switch (unit) {
+    case 'm': return value * 60 * 1000;
+    case 'h': return value * 60 * 60 * 1000;
+    case 'd': return value * 24 * 60 * 60 * 1000;
+    default: return 7 * 24 * 60 * 60 * 1000;
   }
-
-  return result.data;
 };
-
-const env = parseEnv();
 
 export const config = {
   env: env.NODE_ENV,
@@ -60,12 +21,15 @@ export const config = {
   },
   redis: {
     url: env.REDIS_URL,
+    upstashUrl: env.UPSTASH_REDIS_REST_URL,
+    upstashToken: env.UPSTASH_REDIS_REST_TOKEN,
   },
   jwt: {
     accessSecret: env.JWT_ACCESS_SECRET,
     accessExpiry: env.JWT_ACCESS_EXPIRY,
     refreshSecret: env.JWT_REFRESH_SECRET,
     refreshExpiry: env.JWT_REFRESH_EXPIRY,
+    refreshExpiryMs: parseExpiryToMs(env.JWT_REFRESH_EXPIRY),
   },
   smtp: {
     host: env.SMTP_HOST,
@@ -86,6 +50,7 @@ export const config = {
   },
   features: {
     enableAuditLogs: env.ENABLE_AUDIT_LOGS,
+    enableTracing: env.ENABLE_TRACING,
     enableCache: env.ENABLE_CACHE,
   },
 };

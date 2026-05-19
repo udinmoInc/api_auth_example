@@ -3,19 +3,26 @@ import config from '@/config';
 import logger from '@/utils/logger';
 
 export class EmailService {
-  private static transporter = nodemailer.createTransport({
-    host: config.smtp.host,
-    port: config.smtp.port,
-    secure: config.smtp.port === 465, // True for 465, false for others
-    auth: {
-      user: config.smtp.user,
-      pass: config.smtp.pass,
-    },
-  });
+  private static transporter: nodemailer.Transporter | null = null;
+
+  private static getTransporter(): nodemailer.Transporter {
+    if (!this.transporter) {
+      this.transporter = nodemailer.createTransport({
+        host: config.smtp.host,
+        port: config.smtp.port,
+        secure: config.smtp.port === 465,
+        auth: {
+          user: config.smtp.user,
+          pass: config.smtp.pass,
+        },
+      });
+    }
+    return this.transporter;
+  }
 
   private static async sendEmail(to: string, subject: string, html: string): Promise<boolean> {
     try {
-      const info = await this.transporter.sendMail({
+      const info = await this.getTransporter().sendMail({
         from: config.smtp.from,
         to,
         subject,

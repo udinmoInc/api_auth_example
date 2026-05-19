@@ -1,39 +1,36 @@
 import { z } from 'zod';
 
+export const emailSchema = z.string().email('Invalid email address').toLowerCase().trim();
+
+export const passwordSchema = z
+  .string()
+  .min(8, 'Password must be at least 8 characters long')
+  .max(100, 'Password must not exceed 100 characters')
+  .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
+  .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+  .regex(/[0-9]/, 'Password must contain at least one digit')
+  .regex(/[^a-zA-Z0-9]/, 'Password must contain at least one special character');
+
 export const signUpSchema = z.object({
-  email: z.string().email('Invalid email address').toLowerCase().trim(),
-  password: z
-    .string()
-    .min(8, 'Password must be at least 8 characters long')
-    .max(100, 'Password must not exceed 100 characters')
-    .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
-    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
-    .regex(/[0-9]/, 'Password must contain at least one digit')
-    .regex(/[^a-zA-Z0-9]/, 'Password must contain at least one special character'),
+  email: emailSchema,
+  password: passwordSchema,
   firstName: z.string().min(2, 'First name must be at least 2 characters').max(50).optional(),
   lastName: z.string().min(2, 'Last name must be at least 2 characters').max(50).optional(),
   phoneNumber: z.string().regex(/^\+?[1-9]\d{1,14}$/, 'Invalid phone number format').optional(),
 });
 
 export const loginSchema = z.object({
-  email: z.string().email('Invalid email address').toLowerCase().trim(),
+  email: emailSchema,
   password: z.string().min(1, 'Password is required'),
 });
 
 export const forgotPasswordSchema = z.object({
-  email: z.string().email('Invalid email address').toLowerCase().trim(),
+  email: emailSchema,
 });
 
 export const resetPasswordSchema = z.object({
   token: z.string().min(1, 'Reset token is required'),
-  password: z
-    .string()
-    .min(8, 'Password must be at least 8 characters long')
-    .max(100, 'Password must not exceed 100 characters')
-    .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
-    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
-    .regex(/[0-9]/, 'Password must contain at least one digit')
-    .regex(/[^a-zA-Z0-9]/, 'Password must contain at least one special character'),
+  password: passwordSchema,
 });
 
 export const verifyEmailSchema = z.object({

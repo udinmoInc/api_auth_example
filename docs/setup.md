@@ -1,33 +1,37 @@
 # Developer Setup & Deployment Guide
 
-This guide walks you through the developer environment configuration, database seeding, migration pathways, and containerized deployments using Docker.
+This guide walks you through local environment configuration, service provisioning, database migrations, and containerized production builds.
 
 ---
 
 ## 📋 Environment Configuration Checklist
 
-Create a `.env` file at the root of the project. Here is an index of all required variables:
+Configure a `.env` file at the root of the project. The schema is strictly verified at startup by Zod (`src/config/env.ts`):
 
-| Variable | Description | Recommended Value (Dev) |
+| Variable | Description | Recommended (Local Dev) |
 | :--- | :--- | :--- |
 | `PORT` | Local server port | `5000` |
-| `NODE_ENV` | Run context | `development` or `production` |
-| `API_VERSION` | Endpoint mount | `v1` |
-| `DATABASE_URL` | PostgreSQL connection pool | `postgresql://postgres:postgres@localhost:5432/api_auth?schema=public` |
-| `REDIS_URL` | Redis URL | `redis://localhost:6379` |
-| `JWT_ACCESS_SECRET` | 32-byte secret key | Secure hex signature |
-| `JWT_ACCESS_EXPIRY` | Access token TTL | `15m` (15 minutes) |
-| `JWT_REFRESH_SECRET` | 32-byte secret key | Secure hex signature |
-| `JWT_REFRESH_EXPIRY`| Refresh token TTL | `7d` (7 days) |
-| `SMTP_HOST` | Email SMTP host | E.g. `smtp.mailtrap.io` |
-| `SMTP_PORT` | Email SMTP port | `2525` or `465` (secure) |
-| `SMTP_USER` | Email SMTP username | Username credential |
-| `SMTP_PASS` | Email SMTP password | Password credential |
-| `SMTP_FROM` | Sender footprint envelope | `"SaaS Platform" <noreply@saas.com>` |
-| `CORS_ORIGIN` | Allowed web origin | `http://localhost:3000` |
-| `COOKIES_SECURE` | HTTP-Only secure cookies | `false` (Dev) / `true` (Prod) |
+| `NODE_ENV` | Running runtime context | `development` |
+| `API_VERSION` | Endpoint mount version prefix | `v1` |
+| `DATABASE_URL` | PostgreSQL connection pool URL | `postgresql://postgres:postgres@localhost:5432/api_auth?schema=public` |
+| `REDIS_URL` | Redis cache connection string | `redis://localhost:6379` |
+| `JWT_ACCESS_SECRET` | 256-bit access token secret key | 32+ char hex signature |
+| `JWT_ACCESS_EXPIRY` | Access token duration | `15m` |
+| `JWT_REFRESH_SECRET` | 256-bit refresh token secret key | 32+ char hex signature |
+| `JWT_REFRESH_EXPIRY` | Refresh token duration | `7d` |
+| `SMTP_HOST` | Outbound SMTP server | E.g., `smtp.mailtrap.io` |
+| `SMTP_PORT` | Outbound SMTP port | `2525` or `465` (secure TLS) |
+| `SMTP_USER` | SMTP username | Gateway credential |
+| `SMTP_PASS` | SMTP password | Gateway credential |
+| `SMTP_FROM` | Dispatch sender envelope footprint | `"SaaS Platform" <noreply@saas.com>` |
+| `CORS_ORIGIN` | Allowed client origin filter | `http://localhost:3000` |
+| `COOKIES_SECURE` | Secure SSL cookie flag | `false` (Dev) / `true` (Prod) |
+| `ENABLE_LOGGER` | Output structured winston logs | `true` |
+| `ENABLE_TRACING` | Correlation request tracing | `true` |
+| `ENABLE_CACHE` | Enable Redis cache logic | `true` |
+| `ENABLE_AUDIT_LOGS` | Load security audit logging plugin | `true` |
 
-> 💻 **Pro-Tip (Security keys)**: Generate highly secure hex secrets using Node's cryptographic module:
+> **Security Note**: Generate high-entropy hex secrets using Node's native crypto module:
 > ```bash
 > node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 > ```
@@ -36,41 +40,41 @@ Create a `.env` file at the root of the project. Here is an index of all require
 
 ## 🛠️ Step-by-Step Local Deployment
 
-### 1. Provision Services via Docker Compose
-To avoid installing Postgres and Redis locally, run the orchestrated docker-compose stacks:
+### 1. Provision Infrastructure via Docker
+Avoid installing databases locally. Boot local PostgreSQL and Redis servers inside orchestrated containers:
 ```bash
-# Deploys only PostgreSQL database and Redis caching engines
 docker-compose up -d postgres_db redis_cache
 ```
 
-### 2. Prepare Database Schema and Client
-In Prisma v7, you compile the schema and create database tables via:
+### 2. Generate Prisma Client & Migrate Schema
+Prisma compiles client classes and executes structural schema migrations safely on Postgres:
 ```bash
-# Generate Prisma runtime client classes
+# Compile types and dependencies
 npm run prisma:generate
 
-# Execute structural migrations to setup tables and constraints
+# Execute structural migrations to create tables
 npm run prisma:migrate
 ```
 
-### 3. Launch Development Server
-Starts the application engine using Nodemon for automated hot-reloads:
+### 3. Start Development Server
+Starts the compiled Express server using Nodemon to track file changes and trigger hot-reloads:
 ```bash
 npm run dev
 ```
+The application will boot and begin listening at **`http://localhost:5000/api/v1`**.
 
 ---
 
 ## 🐳 Containerized Production Build (Docker)
 
-To run the complete application inside isolated containers (app server, db pool, redis cache):
+To run the complete application inside a secured production Docker environment:
 
 ```bash
-# Build production images and start all services in detached mode
 docker-compose up --build -d
 ```
 
-The multi-stage `Dockerfile` is optimized to:
-1. Compile TypeScript to raw JavaScript inside a build container.
-2. Throw away compile-time dependencies, compiler binaries, and TypeScript tools.
-3. Export only compiled build bundles (`/dist`) and required dependencies, resulting in a minimal and highly secure **50MB runtime image**.
+### Multistage Compilation Optimization
+The application uses a optimized multi-stage `Dockerfile`:
+1. **Builder Stage**: Installs development dependencies, copies files, and compiles TypeScript into raw JavaScript bundles inside `/dist`.
+2. **Runner Stage**: Discards compiler tools, TypeScript utilities, and source files. Installs only production dependencies and copies compiled JavaScript bundles.
+3. **Outcome**: The resulting image is lightweight (approx. **50MB**) and secure, containing no shell tools or development bloat.

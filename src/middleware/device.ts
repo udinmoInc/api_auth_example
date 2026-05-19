@@ -1,11 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
 import useragent from 'express-useragent';
 
-export const deviceExtractor = (req: Request, _res: Response, next: NextFunction) => {
+export const deviceExtractor = (req: Request, _res: Response, next: NextFunction): void => {
   const userAgentString = req.headers['user-agent'] || '';
   const parsedUa = useragent.parse(userAgentString);
   
-  // Resolve client IP (supporting proxies / Load balancers like Cloudflare or Nginx)
+  // Resolve client IP from proxy headers or socket connection
   const forwardedFor = req.headers['x-forwarded-for'];
   let ipAddress = '127.0.0.1';
   
@@ -17,7 +17,7 @@ export const deviceExtractor = (req: Request, _res: Response, next: NextFunction
     ipAddress = req.socket.remoteAddress || req.ip || '127.0.0.1';
   }
 
-  // Map device type
+  // Categorize device type
   let deviceType = 'Desktop';
   if (parsedUa.isMobile) {
     deviceType = 'Mobile';

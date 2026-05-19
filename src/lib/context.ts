@@ -4,7 +4,7 @@ export interface RequestStore {
   requestId: string;
 }
 
-// Global AsyncLocalStorage context thread pool for requests tracing
+// Request-scoped tracing context across asynchronous chains
 export const contextStore = new AsyncLocalStorage<RequestStore>();
 
 export default contextStore;

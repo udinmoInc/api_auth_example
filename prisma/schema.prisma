@@ -38,9 +38,6 @@ model User {
   profile                     Profile?
   sessions                    Session[]
 
-  @@index([email])
-  @@index([verificationToken])
-  @@index([passwordResetToken])
   @@map("users")
 }
 
@@ -80,7 +77,6 @@ model Session {
   updatedAt    DateTime @updatedAt
 
   @@index([userId])
-  @@index([refreshToken])
   @@index([tokenFamily])
   @@map("sessions")
 }

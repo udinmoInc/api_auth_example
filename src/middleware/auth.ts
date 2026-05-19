@@ -2,52 +2,83 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { Role } from '@prisma/client';
 import config from '@/config';
-import { ApiError } from '@/utils/errors';
+import { REDIS_KEYS } from '@/constants';
+import { UnauthorizedError, ForbiddenError } from '@/utils/errors';
 import prisma from '@/lib/prisma';
+import redisClient from '@/lib/redis';
 import { TokenPayload } from '@/modules/auth/auth.types';
-import asyncHandler from '@/utils/asyncHandler';
 
-export const authenticate = asyncHandler(async (req: Request, _res: Response, next: NextFunction) => {
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    throw new ApiError(401, 'Authentication failed. Please provide a valid Bearer token.');
-  }
-
-  const token = authHeader.split(' ')[1];
-
-  let decoded: TokenPayload;
+export const authenticate = async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
   try {
-    decoded = jwt.verify(token, config.jwt.accessSecret) as TokenPayload;
-  } catch (error) {
-    if (error instanceof jwt.TokenExpiredError) {
-      throw new ApiError(401, 'Access token has expired. Please refresh your session.');
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      throw new UnauthorizedError('Authentication failed. Please provide a valid Bearer token.');
     }
-    throw new ApiError(401, 'Authentication failed. Token signature is invalid.');
+
+    const token = authHeader.split(' ')[1];
+
+    let decoded: TokenPayload;
+    try {
+      decoded = jwt.verify(token, config.jwt.accessSecret) as TokenPayload;
+    } catch (error) {
+      if (error instanceof jwt.TokenExpiredError) {
+        throw new UnauthorizedError('Access token has expired. Please refresh your session.');
+      }
+      throw new UnauthorizedError('Authentication failed. Token signature is invalid.');
+    }
+
+    let isSessionValid = false;
+
+    if (config.features.enableCache && redisClient.isOpen) {
+      const cached = await redisClient.get(`${REDIS_KEYS.SESSION_PREFIX}${decoded.sessionId}`).catch(() => null);
+      
+      if (cached !== null) {
+        isSessionValid = cached === 'true';
+      } else {
+        const session = await prisma.session.findUnique({
+          where: { id: decoded.sessionId },
+        });
+        isSessionValid = !!(session && session.isValid);
+
+        if (session) {
+          const remainingTtl = session.expiresAt.getTime() - Date.now();
+          if (remainingTtl > 0) {
+            await redisClient
+              .set(`${REDIS_KEYS.SESSION_PREFIX}${session.id}`, String(session.isValid), {
+                PX: remainingTtl,
+              })
+              .catch(() => null);
+          }
+        }
+      }
+    } else {
+      const session = await prisma.session.findUnique({
+        where: { id: decoded.sessionId },
+      });
+      isSessionValid = !!(session && session.isValid);
+    }
+
+    if (!isSessionValid) {
+      throw new UnauthorizedError('Your session has been terminated. Please log in again.');
+    }
+
+    req.user = decoded;
+    next();
+  } catch (error) {
+    next(error);
   }
-
-  // Cross-check session validity in DB
-  const session = await prisma.session.findUnique({
-    where: { id: decoded.sessionId },
-  });
-
-  if (!session || !session.isValid) {
-    throw new ApiError(401, 'Your session has been terminated. Please log in again.');
-  }
-
-  req.user = decoded;
-  next();
-});
+};
 
 export const authorize = (...allowedRoles: Role[]) => {
-  return (req: Request, _res: Response, next: NextFunction) => {
+  return (req: Request, _res: Response, next: NextFunction): void => {
     if (!req.user) {
-      return next(new ApiError(401, 'User is not authenticated.'));
+      return next(new UnauthorizedError('User is not authenticated.'));
     }
 
     if (!allowedRoles.includes(req.user.role)) {
       return next(
-        new ApiError(403, 'Forbidden. You do not have the required permissions to access this resource.')
+        new ForbiddenError('Forbidden. You do not have the required permissions to access this resource.')
       );
     }
 

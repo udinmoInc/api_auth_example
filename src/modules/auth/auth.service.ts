@@ -2,9 +2,16 @@ import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import config from '@/config';
-import { ApiError } from '@/utils/errors';
+import {
+  BadRequestError,
+  UnauthorizedError,
+  NotFoundError,
+  ConflictError,
+} from '@/utils/errors';
 import { redisClient } from '@/lib/redis';
+import prisma from '@/lib/prisma';
 import { AuthRepository } from './auth.repository';
+import { REDIS_KEYS, TOKEN_EXPIRY } from '@/constants';
 import { SignUpInput, LoginInput, ResetPasswordInput } from './auth.validator';
 import { TokenPayload, RefreshTokenPayload, DeviceMetadata, SessionInfo } from './auth.types';
 import EmailService from '@/services/email.service';
@@ -15,8 +22,7 @@ export class AuthService {
   private repository = new AuthRepository();
 
   private async hashPassword(password: string): Promise<string> {
-    const saltRounds = 10;
-    return bcrypt.hash(password, saltRounds);
+    return bcrypt.hash(password, 10);
   }
 
   private async verifyPassword(password: string, hash: string): Promise<boolean> {
@@ -41,35 +47,23 @@ export class AuthService {
     return { accessToken, refreshToken };
   }
 
-  // Parse token expiry config (e.g. "15m", "7d") into ms
-  private parseExpiryToMs(expiry: string): number {
-    const unit = expiry.slice(-1);
-    const value = parseInt(expiry.slice(0, -1), 10);
-    switch (unit) {
-      case 'm': return value * 60 * 1000;
-      case 'h': return value * 60 * 60 * 1000;
-      case 'd': return value * 24 * 60 * 60 * 1000;
-      default: return 7 * 24 * 60 * 60 * 1000;
-    }
-  }
-
   public async register(input: SignUpInput) {
     const existingUser = await this.repository.findByEmail(input.email);
     if (existingUser) {
-      throw new ApiError(409, 'User with this email already exists.');
+      throw new ConflictError('User with this email already exists.');
     }
 
     const passwordHash = await this.hashPassword(input.password);
     const verificationToken = crypto.randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + TOKEN_EXPIRY.EMAIL_VERIFY_MS);
 
     const user = await this.repository.createUser(input, passwordHash, verificationToken, expiresAt);
 
+    // Send verification email out-of-band
     EmailService.sendVerificationEmail(user.email, verificationToken).catch((err) => {
       logger.error('Background verification email failed:', err);
     });
 
-    // Fire hook for external plugins (e.g. notifications, billing, workspaces)
     authEvents.emit('signup', { userId: user.id, email: user.email, firstName: input.firstName, lastName: input.lastName });
 
     return user;
@@ -78,17 +72,17 @@ export class AuthService {
   public async login(input: LoginInput, device: DeviceMetadata) {
     const user = await this.repository.findByEmail(input.email);
     if (!user) {
-      throw new ApiError(401, 'Invalid email or password.');
+      throw new UnauthorizedError('Invalid email or password.');
     }
 
     const isPasswordValid = await this.verifyPassword(input.password, user.passwordHash);
     if (!isPasswordValid) {
-      throw new ApiError(401, 'Invalid email or password.');
+      throw new UnauthorizedError('Invalid email or password.');
     }
 
     const tokenFamily = crypto.randomUUID();
     const sessionId = crypto.randomUUID();
-    const refreshExpiryMs = this.parseExpiryToMs(config.jwt.refreshExpiry);
+    const refreshExpiryMs = config.jwt.refreshExpiryMs;
     const expiresAt = new Date(Date.now() + refreshExpiryMs);
 
     const tokens = this.generateTokens(
@@ -98,7 +92,15 @@ export class AuthService {
 
     await this.repository.createSession(user.id, tokenFamily, tokens.refreshToken, expiresAt, device);
 
-    // Fire login hook for audit trails and telemetry extensions
+    // Warm cache to bypass db query on subsequent authentications
+    if (config.features.enableCache && redisClient.isOpen) {
+      await redisClient
+        .set(`${REDIS_KEYS.SESSION_PREFIX}${sessionId}`, 'true', {
+          PX: refreshExpiryMs,
+        })
+        .catch(() => null);
+    }
+
     authEvents.emit('login', { userId: user.id, email: user.email, ipAddress: device.ipAddress, device: device.device });
 
     return {
@@ -107,54 +109,63 @@ export class AuthService {
     };
   }
 
-  // Refresh token rotation with replay protection and concurrent request grace period
   public async rotateTokens(oldRefreshToken: string, device: DeviceMetadata) {
     const redisValue = config.features.enableCache
-      ? await redisClient.get(`blacklist:${oldRefreshToken}`)
+      ? await redisClient.get(`${REDIS_KEYS.BLACKLIST_PREFIX}${oldRefreshToken}`)
       : null;
     
     if (redisValue) {
-      // If within 15s grace period, it contains the JSON string of the newly generated token pair.
-      // We return these cached tokens to handle concurrent refreshes seamlessly.
+      // Handle concurrent requests from multi-tab reloads during the grace period
       try {
         const graceTokens = JSON.parse(redisValue);
         if (graceTokens && graceTokens.accessToken && graceTokens.refreshToken) {
-          logger.info('🔄 Grace period hit for concurrent refresh. Returning cached tokens.');
+          logger.info('Grace-period cache hit for concurrent refresh request.');
           return graceTokens;
         }
       } catch (e) {
-        // Not a JSON payload, meaning grace period expired and it's a hard blacklist
+        // Plain blacklist string implies expired grace period
       }
 
-      logger.warn('Blocked reuse attempt on blacklisted refresh token.');
-      throw new ApiError(401, 'Session has expired.');
+      logger.warn('Blocked reuse of blacklisted refresh token.');
+      throw new UnauthorizedError('Session has expired.');
     }
 
     let decoded: RefreshTokenPayload;
     try {
       decoded = jwt.verify(oldRefreshToken, config.jwt.refreshSecret) as RefreshTokenPayload;
     } catch (error) {
-      throw new ApiError(401, 'Invalid or expired refresh token.');
+      throw new UnauthorizedError('Invalid or expired refresh token.');
     }
 
     const { userId, sessionId, tokenFamily } = decoded;
     const session = await this.repository.findSessionByRefreshToken(oldRefreshToken);
 
-    // Replay detection: If token belongs to a known family but session does not match,
-    // it was already rotated. Immediately revoke the entire family.
+    // Replay attack prevention: invalidate whole family if the token isn't in db
     if (!session) {
-      logger.warn(`🚨 REPLAY ATTACK DETECTED for user ${userId}. Revoking family: ${tokenFamily}`);
+      logger.warn(`Potential replay attack on user ${userId}. Revoking family: ${tokenFamily}`);
+      
+      const familySessions = await prisma.session.findMany({
+        where: { tokenFamily },
+        select: { id: true },
+      });
       await this.repository.invalidateTokenFamily(tokenFamily);
-      throw new ApiError(401, 'Session revoked.');
+      
+      if (config.features.enableCache && redisClient.isOpen) {
+        await Promise.all(
+          familySessions.map((s) => redisClient.del(`${REDIS_KEYS.SESSION_PREFIX}${s.id}`).catch(() => null))
+        );
+      }
+      
+      throw new UnauthorizedError('Session revoked.');
     }
 
     if (!session.isValid || new Date() > session.expiresAt) {
-      throw new ApiError(401, 'Session is invalid or expired.');
+      throw new UnauthorizedError('Session is invalid or expired.');
     }
 
     const user = await this.repository.findById(userId);
     if (!user) {
-      throw new ApiError(401, 'User not found.');
+      throw new UnauthorizedError('User not found.');
     }
 
     const newTokens = this.generateTokens(
@@ -162,10 +173,9 @@ export class AuthService {
       tokenFamily
     );
 
-    const refreshExpiryMs = this.parseExpiryToMs(config.jwt.refreshExpiry);
+    const refreshExpiryMs = config.jwt.refreshExpiryMs;
     const expiresAt = new Date(Date.now() + refreshExpiryMs);
 
-    // Persist new refresh token on active database session
     await this.repository.updateSession(session.id, {
       refreshToken: newTokens.refreshToken,
       expiresAt,
@@ -176,15 +186,22 @@ export class AuthService {
       browser: device.browser || session.browser,
     });
 
+    if (config.features.enableCache && redisClient.isOpen) {
+      await redisClient
+        .set(`${REDIS_KEYS.SESSION_PREFIX}${session.id}`, 'true', {
+          PX: refreshExpiryMs,
+        })
+        .catch(() => null);
+    }
+
     const remainingTtlMs = session.expiresAt.getTime() - Date.now();
-    const GRACE_PERIOD_MS = 15000; // 15 seconds grace period
+    const GRACE_PERIOD_MS = 15000;
     
     if (remainingTtlMs > 0 && config.features.enableCache) {
-      // Ensure the grace period cache never extends the lifespan of an expiring refresh token
       const pxExpiry = Math.min(GRACE_PERIOD_MS, remainingTtlMs);
 
-      // Keep the new tokens in Redis for the first 15s so concurrent requests get the same tokens
-      await redisClient.set(`blacklist:${oldRefreshToken}`, JSON.stringify(newTokens), {
+      // Cache rotated token briefly to prevent race conditions on concurrent connections
+      await redisClient.set(`${REDIS_KEYS.BLACKLIST_PREFIX}${oldRefreshToken}`, JSON.stringify(newTokens), {
         PX: pxExpiry,
       });
     }
@@ -198,14 +215,16 @@ export class AuthService {
 
     const remainingTtlMs = session.expiresAt.getTime() - Date.now();
     if (remainingTtlMs > 0 && config.features.enableCache) {
-      await redisClient.set(`blacklist:${refreshToken}`, 'true', {
+      await redisClient.set(`${REDIS_KEYS.BLACKLIST_PREFIX}${refreshToken}`, 'true', {
         PX: remainingTtlMs,
       });
     }
 
     await this.repository.invalidateSession(session.id);
+    if (config.features.enableCache && redisClient.isOpen) {
+      await redisClient.del(`${REDIS_KEYS.SESSION_PREFIX}${session.id}`).catch(() => null);
+    }
 
-    // Fire logout hook
     authEvents.emit('logout', { userId: session.userId, sessionId: session.id });
   }
 
@@ -213,7 +232,7 @@ export class AuthService {
     const user = await this.repository.findByVerificationToken(token);
 
     if (!user) {
-      throw new ApiError(400, 'Invalid verification token.');
+      throw new BadRequestError('Invalid verification token.');
     }
 
     if (user.isEmailVerified) {
@@ -221,7 +240,7 @@ export class AuthService {
     }
 
     if (user.verificationTokenExpiresAt && new Date() > user.verificationTokenExpiresAt) {
-      throw new ApiError(400, 'Verification token has expired.');
+      throw new BadRequestError('Verification token has expired.');
     }
 
     return this.repository.updateUser(user.id, {
@@ -233,10 +252,10 @@ export class AuthService {
 
   public async forgotPassword(email: string) {
     const user = await this.repository.findByEmail(email);
-    if (!user) return; // Silent return for security
+    if (!user) return; // Silent response to mitigate user enumeration
 
     const resetToken = crypto.randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    const expiresAt = new Date(Date.now() + TOKEN_EXPIRY.PASSWORD_RESET_MS);
 
     await this.repository.updateUser(user.id, {
       passwordResetToken: resetToken,
@@ -252,17 +271,24 @@ export class AuthService {
     const user = await this.repository.findByPasswordResetToken(input.token);
 
     if (!user) {
-      throw new ApiError(400, 'Invalid reset token.');
+      throw new BadRequestError('Invalid reset token.');
     }
 
     if (user.passwordResetTokenExpiresAt && new Date() > user.passwordResetTokenExpiresAt) {
-      throw new ApiError(400, 'Reset token has expired.');
+      throw new BadRequestError('Reset token has expired.');
     }
 
     const passwordHash = await this.hashPassword(input.password);
+    const activeSessions = await this.repository.findActiveSessionsByUserId(user.id);
 
-    // Invalidate all login sessions on password change
+    // Invalidate all existing sessions on password reset
     await this.repository.invalidateAllSessionsForUser(user.id);
+
+    if (config.features.enableCache && redisClient.isOpen) {
+      await Promise.all(
+        activeSessions.map((s) => redisClient.del(`${REDIS_KEYS.SESSION_PREFIX}${s.id}`).catch(() => null))
+      );
+    }
 
     const updatedUser = await this.repository.updateUser(user.id, {
       passwordHash,
@@ -270,7 +296,6 @@ export class AuthService {
       passwordResetTokenExpiresAt: null,
     });
 
-    // Fire password reset hook
     authEvents.emit('passwordReset', { userId: user.id });
 
     return updatedUser;
@@ -295,19 +320,21 @@ export class AuthService {
   public async revokeSession(userId: string, sessionId: string) {
     const session = await this.repository.findSessionById(sessionId);
     if (!session || session.userId !== userId) {
-      throw new ApiError(404, 'Session not found.');
+      throw new NotFoundError('Session not found.');
     }
 
     const remainingTtlMs = session.expiresAt.getTime() - Date.now();
     if (remainingTtlMs > 0 && session.refreshToken && config.features.enableCache) {
-      await redisClient.set(`blacklist:${session.refreshToken}`, 'true', {
+      await redisClient.set(`${REDIS_KEYS.BLACKLIST_PREFIX}${session.refreshToken}`, 'true', {
         PX: remainingTtlMs,
       });
     }
 
     await this.repository.invalidateSession(sessionId);
+    if (config.features.enableCache && redisClient.isOpen) {
+      await redisClient.del(`${REDIS_KEYS.SESSION_PREFIX}${sessionId}`).catch(() => null);
+    }
 
-    // Fire session revocation hook
     authEvents.emit('sessionRevoked', { userId, sessionId });
   }
 }

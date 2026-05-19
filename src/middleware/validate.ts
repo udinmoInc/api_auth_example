@@ -1,6 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import asyncHandler from '@/utils/asyncHandler';
 
 export interface ValidationSchema {
   body?: z.ZodTypeAny;
@@ -9,18 +8,22 @@ export interface ValidationSchema {
 }
 
 export const validate = (schema: ValidationSchema) => {
-  return asyncHandler(async (req: Request, _res: Response, next: NextFunction) => {
-    if (schema.body) {
-      req.body = await schema.body.parseAsync(req.body);
+  return (req: Request, _res: Response, next: NextFunction) => {
+    try {
+      if (schema.body) {
+        req.body = schema.body.parse(req.body);
+      }
+      if (schema.query) {
+        req.query = schema.query.parse(req.query) as any;
+      }
+      if (schema.params) {
+        req.params = schema.params.parse(req.params) as any;
+      }
+      next();
+    } catch (error) {
+      next(error);
     }
-    if (schema.query) {
-      req.query = (await schema.query.parseAsync(req.query)) as any;
-    }
-    if (schema.params) {
-      req.params = (await schema.params.parseAsync(req.params)) as any;
-    }
-    next();
-  });
+  };
 };
 
 export default validate;

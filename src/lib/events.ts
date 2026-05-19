@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import logger from '@/utils/logger';
 
+// Standard event emitter that catches handler exceptions to avoid breaking request cycle
 class SafeEventEmitter extends EventEmitter {
   constructor() {
     super();
@@ -12,7 +13,7 @@ class SafeEventEmitter extends EventEmitter {
       try {
         super.emit(event, ...args);
       } catch (error) {
-        logger.error(`❌ [SafeEvent] Exception thrown inside listener callback for event [${String(event)}]:`, error);
+        logger.error(`[EventBus] Handler crashed for "${String(event)}":`, error);
       }
     });
     return true;

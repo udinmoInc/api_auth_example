@@ -6,23 +6,24 @@ export interface AppPlugin {
   init?: (app: Express) => void | Promise<void>;
 }
 
+// Global registry for initializing extensions on server boot
 class PluginRegistry {
   private plugins: AppPlugin[] = [];
 
-  public register(plugin: AppPlugin) {
+  public register(plugin: AppPlugin): void {
     this.plugins.push(plugin);
-    logger.info(`🔌 Extension Registered: [${plugin.name}]`);
+    logger.info(`Extension registered: ${plugin.name}`);
   }
 
-  public async initializeAll(app: Express) {
+  public async initializeAll(app: Express): Promise<void> {
     for (const plugin of this.plugins) {
       try {
         if (plugin.init) {
           await plugin.init(app);
-          logger.info(`✨ Extension Initialized: [${plugin.name}]`);
+          logger.info(`Extension initialized: ${plugin.name}`);
         }
       } catch (error) {
-        logger.error(`❌ Failed to initialize extension [${plugin.name}]:`, error);
+        logger.error(`Failed to initialize extension "${plugin.name}":`, error);
       }
     }
   }

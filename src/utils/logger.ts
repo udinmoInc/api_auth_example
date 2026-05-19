@@ -4,7 +4,7 @@ import { contextStore } from '@/lib/context';
 
 const { combine, timestamp, json, colorize, printf, errors } = winston.format;
 
-// Format that injects correlation requestId from AsyncLocalStorage context thread
+// Inject correlation requestId from active request store context
 const contextFormat = winston.format((info) => {
   const store = contextStore.getStore();
   if (store) {
@@ -13,7 +13,7 @@ const contextFormat = winston.format((info) => {
   return info;
 });
 
-// Custom console format for local development
+// Custom terminal output format for development
 const consoleFormat = printf(({ level, message, timestamp, stack, requestId, ...metadata }) => {
   const reqTag = requestId ? ` [${requestId}]` : '';
   let log = `${timestamp}${reqTag} [${level}]: ${message}`;
@@ -50,7 +50,7 @@ export const logger = winston.createLogger({
       handleRejections: true,
     }),
   ],
-  silent: !config.logging.enableLogger, // Dynamically mute the logger based on configuration
+  silent: !config.logging.enableLogger,
   exitOnError: false,
 });
 

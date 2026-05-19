@@ -1,22 +1,25 @@
-# REST API Documentation & Payload Reference
+# REST API Reference & Payload Specs
 
-This reference details the entry endpoints, required headers, schemas, response structures, and error schema maps.
+This reference outlines the available endpoints, required payload structures, authorization rules, and error envelopes.
 
 ---
 
-## 📡 Base Endpoint Context
-* **Base URL**: `http://localhost:5000/api/v1`
+## Base Context
+* **Base Path**: `/api/v1`
+* **Default Port**: `5000`
 * **Content-Type**: `application/json`
 
 ---
 
-## 📁 Endpoints Reference
+## Endpoint Specifications
 
 ### 1. Register User
+Registers a new user and provisions their associated profile records. Sends an out-of-band email verification link.
+
 * **Endpoint**: `POST /auth/register`
-* **Authentication**: None
-* **Rate Limiting**: Strict (Auth)
-* **Request Payload**:
+* **Auth**: None
+* **Rate Limit**: Auth Window (10 attempts / 15 minutes)
+* **Payload**:
 ```json
 {
   "email": "developer@saas.com",
@@ -26,22 +29,23 @@ This reference details the entry endpoints, required headers, schemas, response 
   "phoneNumber": "+1234567890"
 }
 ```
-* **Response Payload (201 Created)**:
+
+* **Response (201 Created)**:
 ```json
 {
   "success": true,
   "statusCode": 201,
-  "message": "Registration successful. We have sent an email verification link to your registered email address.",
+  "message": "Registration successful. Verification email sent.",
   "data": {
     "user": {
-      "id": "8b08269e-bf33-47a3-b6d8-f80e9cdb05e6",
+      "id": "c1a01103-61a0-43e6-bfbd-61a99a8de4a0",
       "email": "developer@saas.com",
       "role": "USER",
       "isEmailVerified": false,
-      "createdAt": "2026-05-19T07:44:00.000Z",
-      "updatedAt": "2026-05-19T07:44:00.000Z",
+      "createdAt": "2026-05-19T03:30:00.000Z",
+      "updatedAt": "2026-05-19T03:30:00.000Z",
       "profile": {
-        "id": "f8a02c9a-c944-482a-a92c-d9bcf90c0ef6",
+        "id": "p8a02c9a-c944-482a-a92c-d9bcf90c0ef6",
         "firstName": "John",
         "lastName": "Doe",
         "avatarUrl": null,
@@ -49,53 +53,61 @@ This reference details the entry endpoints, required headers, schemas, response 
       }
     }
   },
-  "timestamp": "2026-05-19T07:44:02.123Z"
+  "timestamp": "2026-05-19T03:30:00.123Z"
 }
 ```
 
 ---
 
-### 2. Login User
+### 2. User Authentication (Login)
+Validates credentials, spawns a unique active session, warms the Redis session validity cache, and returns cookie tokens.
+
 * **Endpoint**: `POST /auth/login`
-* **Authentication**: None
-* **Rate Limiting**: Strict (Auth)
-* **Request Payload**:
+* **Auth**: None
+* **Rate Limit**: Auth Window (10 attempts / 15 minutes)
+* **Payload**:
 ```json
 {
   "email": "developer@saas.com",
   "password": "SecurePassword123!"
 }
 ```
-* **Response Payload (200 OK)**:
+
+* **Response (200 OK)**:
+*(Sets the HTTP-Only cookie `refreshToken`)*
 ```json
 {
   "success": true,
   "statusCode": 200,
   "message": "Login successful.",
   "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
     "user": {
-      "id": "8b08269e-bf33-47a3-b6d8-f80e9cdb05e6",
+      "id": "c1a01103-61a0-43e6-bfbd-61a99a8de4a0",
       "email": "developer@saas.com",
       "role": "USER",
       "isEmailVerified": true,
-      "createdAt": "2026-05-19T07:44:00.000Z",
-      "updatedAt": "2026-05-19T07:44:00.000Z"
-    },
-    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI4YjA4MjY5ZS1iZjMzLTQ3YTMtYjZkOC1mODBlOWNkYjA1ZTYiLCJlbWFpbCI6ImRldmVsb3BlckBzYWFzLmNvbSIsInJvbGUiOiJVU0VSIiwic2Vzc2lvbklkIjoiYzVhMmM4OWEtYzk0NC00ODJhLWE5MmMtZDliY2Y5MGMwZWY2In0..."
+      "createdAt": "2026-05-19T03:30:00.000Z",
+      "updatedAt": "2026-05-19T03:30:00.000Z"
+    }
   },
-  "timestamp": "2026-05-19T07:45:00.123Z"
+  "timestamp": "2026-05-19T03:31:00.456Z"
 }
 ```
-> 🍪 **Secure Cookie Footprint**: The response includes a secure HTTP-Only, SameSite cookie:
+
+> **Cookie Configuration**:
 > `Set-Cookie: refreshToken=eyJhbGci...; Path=/; Max-Age=604800; HttpOnly; SameSite=Strict; Secure`
 
 ---
 
 ### 3. Rotate Tokens (Refresh)
+Invokes Refresh Token Rotation (RTR). Invalidates the old token, caches it briefly in the Redis blacklist for a concurrent 15-second grace window, and issues a fresh pair.
+
 * **Endpoint**: `POST /auth/refresh`
-* **Authentication**: Refresh Token (Parsed from cookie or JSON body)
-* **Rate Limiting**: General
-* **Response Payload (200 OK)**:
+* **Auth**: Refresh Token (Loaded from `refreshToken` cookie or JSON payload)
+* **Payload**: None
+* **Response (200 OK)**:
+*(Updates the HTTP-Only cookie `refreshToken`)*
 ```json
 {
   "success": true,
@@ -104,49 +116,67 @@ This reference details the entry endpoints, required headers, schemas, response 
   "data": {
     "accessToken": "eyJhbGciOiJIUzI1NiIsInR5c..."
   },
-  "timestamp": "2026-05-19T07:46:12.123Z"
+  "timestamp": "2026-05-19T03:32:00.123Z"
 }
 ```
 
 ---
 
-### 4. Fetch Active Devices / Sessions
+### 4. Fetch Active Sessions
+Queries all active login devices and sessions associated with the user account.
+
 * **Endpoint**: `GET /auth/sessions`
-* **Authentication**: Authorization header Bearer Access Token
-* **Headers**: `Authorization: Bearer <accessToken>`
-* **Response Payload (200 OK)**:
+* **Auth**: `Bearer <accessToken>`
+* **Response (200 OK)**:
 ```json
 {
   "success": true,
   "statusCode": 200,
-  "message": "Active login sessions fetched successfully.",
+  "message": "Active sessions fetched.",
   "data": {
     "sessions": [
       {
-        "id": "c5a2c89a-c944-482a-a92c-d9bcf90c0ef6",
-        "userId": "8b08269e-bf33-47a3-b6d8-f80e9cdb05e6",
+        "id": "s5a2c89a-c944-482a-a92c-d9bcf90c0ef6",
+        "userId": "c1a01103-61a0-43e6-bfbd-61a99a8de4a0",
         "device": "Desktop",
         "os": "Windows 11",
         "browser": "Chrome",
-        "ipAddress": "192.168.1.5",
+        "ipAddress": "127.0.0.1",
         "isValid": true,
-        "createdAt": "2026-05-19T07:45:00.000Z",
-        "expiresAt": "2026-05-26T07:45:00.000Z",
+        "createdAt": "2026-05-19T03:31:00.000Z",
+        "expiresAt": "2026-05-26T03:31:00.000Z",
         "isCurrent": true
       }
     ]
   },
-  "timestamp": "2026-05-19T07:47:30.123Z"
+  "timestamp": "2026-05-19T03:33:00.123Z"
 }
 ```
 
 ---
 
-### 5. Dynamic Extension Health (Plugin Endpoint Example)
+### 5. Revoke Session
+Terminates an active session remotely and removes it from the validity cache.
+
+* **Endpoint**: `DELETE /auth/sessions/:sessionId`
+* **Auth**: `Bearer <accessToken>`
+* **Response (200 OK)**:
+```json
+{
+  "success": true,
+  "statusCode": 200,
+  "message": "Session revoked successfully."
+}
+```
+
+---
+
+### 6. Dynamic Extension Health (Plugin Endpoint Example)
+An endpoint mounted dynamically by the `AuditLogsExtension` if enabled.
+
 * **Endpoint**: `GET /plugins/audit-logs/health`
-* **Authentication**: None (Dynamic route loaded by registered plugins)
-* **Description**: Verifies the health and listener bindings for registered event extensions (e.g. Audit Ledger, Webhooks).
-* **Response Payload (200 OK)**:
+* **Auth**: None
+* **Response (200 OK)**:
 ```json
 {
   "status": "active",
@@ -162,11 +192,11 @@ This reference details the entry endpoints, required headers, schemas, response 
 
 ---
 
-## 🚫 Standard Unified Error Format
+## Error Envelope Standards
 
-When an operational failure, relational constraint violation, or Zod validation error occurs, the server yields a consistent, client-friendly structured JSON payload.
+All runtime, database constraint, and validator validation failures conform to a unified format.
 
-### Example: Validation Error (400 Bad Request)
+### Validation Exception (400 Bad Request)
 ```json
 {
   "success": false,
@@ -182,6 +212,6 @@ When an operational failure, relational constraint violation, or Zod validation 
       "message": "Password must be at least 8 characters long"
     }
   ],
-  "timestamp": "2026-05-19T07:48:15.123Z"
+  "timestamp": "2026-05-19T03:34:00.123Z"
 }
 ```

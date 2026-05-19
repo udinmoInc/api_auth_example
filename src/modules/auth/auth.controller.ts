@@ -3,17 +3,18 @@ import AuthService from './auth.service';
 import { AuthDto } from './auth.dto';
 import ApiResponse from '@/utils/response';
 import config from '@/config';
+import { COOKIE_NAMES, ERROR_CODES } from '@/constants';
 import { ApiError } from '@/utils/errors';
 
 export class AuthController {
   private service = new AuthService();
 
-  // Set HTTP-Only, SameSite cookie for the refresh token
-  private setRefreshTokenCookie(res: Response, token: string) {
+  // Helper to set secure refresh token cookie
+  private setRefreshTokenCookie(res: Response, token: string): void {
     const isProd = config.env === 'production';
-    const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days (matches refresh token expiry)
+    const maxAge = config.jwt.refreshExpiryMs;
 
-    res.cookie('refreshToken', token, {
+    res.cookie(COOKIE_NAMES.REFRESH_TOKEN, token, {
       httpOnly: true,
       secure: config.security.cookiesSecure || isProd,
       sameSite: 'strict',
@@ -22,9 +23,9 @@ export class AuthController {
     });
   }
 
-  // Clear HTTP-Only cookie during logout
-  private clearRefreshTokenCookie(res: Response) {
-    res.clearCookie('refreshToken', {
+  // Clear cookie upon logout
+  private clearRefreshTokenCookie(res: Response): void {
+    res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, {
       httpOnly: true,
       secure: config.security.cookiesSecure || config.env === 'production',
       sameSite: 'strict',
@@ -32,7 +33,7 @@ export class AuthController {
     });
   }
 
-  public register = async (req: Request, res: Response) => {
+  public register = async (req: Request, res: Response): Promise<Response> => {
     const user = await this.service.register(req.body);
     const userDto = AuthDto.toUserDto(user);
     
@@ -44,7 +45,7 @@ export class AuthController {
     );
   };
 
-  public login = async (req: Request, res: Response) => {
+  public login = async (req: Request, res: Response): Promise<Response> => {
     const device = req.deviceMetadata || {};
     const result = await this.service.login(req.body, device);
     
@@ -58,11 +59,11 @@ export class AuthController {
     });
   };
 
-  public refresh = async (req: Request, res: Response) => {
-    const oldRefreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
+  public refresh = async (req: Request, res: Response): Promise<Response> => {
+    const oldRefreshToken = req.cookies?.[COOKIE_NAMES.REFRESH_TOKEN] || req.body?.[COOKIE_NAMES.REFRESH_TOKEN];
 
     if (!oldRefreshToken) {
-      throw new ApiError(401, 'Refresh token is missing.');
+      throw new ApiError(ERROR_CODES.UNAUTHORIZED, 'Refresh token is missing.');
     }
 
     const device = req.deviceMetadata || {};
@@ -75,8 +76,8 @@ export class AuthController {
     });
   };
 
-  public logout = async (req: Request, res: Response) => {
-    const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
+  public logout = async (req: Request, res: Response): Promise<Response> => {
+    const refreshToken = req.cookies?.[COOKIE_NAMES.REFRESH_TOKEN] || req.body?.[COOKIE_NAMES.REFRESH_TOKEN];
 
     if (refreshToken) {
       await this.service.logout(refreshToken);
@@ -87,11 +88,11 @@ export class AuthController {
     return ApiResponse.success(res, 200, 'Logged out successfully.');
   };
 
-  public verifyEmail = async (req: Request, res: Response) => {
+  public verifyEmail = async (req: Request, res: Response): Promise<Response> => {
     const token = req.query.token;
     
     if (typeof token !== 'string') {
-      throw new ApiError(400, 'Verification token must be a string.');
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, 'Verification token must be a string.');
     }
 
     const user = await this.service.verifyEmail(token);
@@ -102,11 +103,11 @@ export class AuthController {
     });
   };
 
-  public forgotPassword = async (req: Request, res: Response) => {
+  public forgotPassword = async (req: Request, res: Response): Promise<Response> => {
     const { email } = req.body;
     await this.service.forgotPassword(email);
 
-    // Standard security: respond identically whether email exists or not
+    // Uniform response to prevent email enumeration
     return ApiResponse.success(
       res,
       200,
@@ -114,7 +115,7 @@ export class AuthController {
     );
   };
 
-  public resetPassword = async (req: Request, res: Response) => {
+  public resetPassword = async (req: Request, res: Response): Promise<Response> => {
     await this.service.resetPassword(req.body);
 
     return ApiResponse.success(
@@ -124,7 +125,7 @@ export class AuthController {
     );
   };
 
-  public getSessions = async (req: Request, res: Response) => {
+  public getSessions = async (req: Request, res: Response): Promise<Response> => {
     const userId = req.user!.userId;
     const currentSessionId = req.user!.sessionId;
 
@@ -132,12 +133,12 @@ export class AuthController {
     return ApiResponse.success(res, 200, 'Active sessions fetched.', { sessions });
   };
 
-  public revokeSession = async (req: Request, res: Response) => {
+  public revokeSession = async (req: Request, res: Response): Promise<Response> => {
     const userId = req.user!.userId;
     const { sessionId } = req.params;
 
     if (!sessionId) {
-      throw new ApiError(400, 'Session ID is required.');
+      throw new ApiError(ERROR_CODES.BAD_REQUEST, 'Session ID is required.');
     }
 
     await this.service.revokeSession(userId, sessionId as string);
