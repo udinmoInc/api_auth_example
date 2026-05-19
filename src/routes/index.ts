@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import config from '@/config';
 import authRouter from '@/modules/auth/auth.routes';
 
 const router = Router();
@@ -11,7 +12,7 @@ router.get('/health', (_req, res) => {
   res.status(200).json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
-    env: process.env.NODE_ENV,
+    env: config.env,
   });
 });
 

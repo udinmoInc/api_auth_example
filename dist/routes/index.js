@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
+const config_1 = __importDefault(require("@/config"));
 const auth_routes_1 = __importDefault(require("@/modules/auth/auth.routes"));
 const router = (0, express_1.Router)();
 // Mount modules
@@ -13,7 +14,7 @@ router.get('/health', (_req, res) => {
     res.status(200).json({
         status: 'healthy',
         timestamp: new Date().toISOString(),
-        env: process.env.NODE_ENV,
+        env: config_1.default.env,
     });
 });
 exports.default = router;
