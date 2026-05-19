@@ -11,6 +11,10 @@ import routes from '@/routes';
 import { ApiError } from '@/utils/errors';
 import prisma from '@/lib/prisma';
 import redisClient from '@/lib/redis';
+import pluginRegistry from '@/lib/plugins';
+
+// Load and auto-register extensions/plugins
+import '@/plugins/auditLogs';
 
 const app = express();
 
@@ -29,6 +33,11 @@ app.use(requestLogger);
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 app.use(cookieParser());
+
+// Initialize registered plugins and extensions dynamically
+pluginRegistry.initializeAll(app).catch((err) => {
+  logger.error('Failed to initialize plugins:', err);
+});
 
 // Route registrations
 app.use(`/api/${config.apiVersion}`, routes);

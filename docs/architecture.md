@@ -94,3 +94,47 @@ To guarantee uninterrupted service in containerized environments (Kubernetes, AW
 2. It stops accepting new HTTP connections immediately.
 3. It closes all ongoing database transactions and pools inside `PrismaClient` and disconnects Redis connection sockets safely.
 4. Once active connections drain, the process exits cleanly.
+
+---
+
+## 🧩 Event-Driven Plugin Architecture
+
+To preserve a highly reusable, unopinionated core while offering absolute flexibility, this boilerplate introduces an **Event-Driven Extension & Module Registry** architecture. This lets client projects add new workflows (workspaces, WebSockets, audit ledgers, Stripe billing, notifications) dynamically.
+
+```
+       ┌─────────────────────────────────────────────────────────┐
+       │                 Core Auth Lifecycle                     │
+       └──────────────────────────┬──────────────────────────────┘
+                                  │
+                                  │ (emits events asynchronously)
+                                  ▼
+       ┌─────────────────────────────────────────────────────────┐
+       │             App Events (authEvents emitter)             │
+       └────┬─────────────────────┬─────────────────────────┬────┘
+            │                     │                         │
+            ▼ (signup)            ▼ (login)                 ▼ (passwordReset)
+    ┌───────────────┐     ┌───────────────┐         ┌───────────────┐
+    │ Billing/Teams │     │ Audit Ledger  │         │ Notifications │
+    │   Extension   │     │   Extension   │         │   Extension   │
+    └───────────────┘     └───────────────┘         └───────────────┘
+```
+
+### 1. Asynchronous App Events (`src/lib/events.ts`)
+The auth core acts as a pure event publisher. Important actions emit lightweight lifecycle events containing non-sensitive contextual payloads:
+* `signup`: Emitted when a new user registers (contains `userId`, `email`, name metadata). Useful for provisioning workspaces or sending welcome mailers.
+* `login`: Emitted upon successful authentication (contains `userId`, `email`, IP, and device metadata). Perfect for security alert hooks or audit logging.
+* `logout` / `sessionRevoked`: Triggered when sessions are discarded.
+* `passwordReset`: Dispatched on successful credential updates to close alternative devices.
+
+### 2. Plug-and-Play Module Registry (`src/lib/plugins.ts`)
+Instead of hardcoding route lists, the `pluginRegistry` compiles registered custom extensions and mounts them onto the Express instance during boot:
+
+```typescript
+export interface AppPlugin {
+  name: string;
+  init?: (app: Express) => void | Promise<void>;
+}
+```
+
+This guarantees **zero core coupling**—you can create, delete, or disable plugins without modifying a single line of the main routing table, controller directories, or business service classes.
+

@@ -17,6 +17,9 @@ const routes_1 = __importDefault(require("@/routes"));
 const errors_1 = require("@/utils/errors");
 const prisma_1 = __importDefault(require("@/lib/prisma"));
 const redis_1 = __importDefault(require("@/lib/redis"));
+const plugins_1 = __importDefault(require("@/lib/plugins"));
+// Load and auto-register extensions/plugins
+require("@/plugins/auditLogs");
 const app = (0, express_1.default)();
 exports.app = app;
 // Global request pre-processing and security filters
@@ -32,6 +35,10 @@ app.use(requestLogger_1.default);
 app.use(express_1.default.json({ limit: '10kb' }));
 app.use(express_1.default.urlencoded({ extended: true, limit: '10kb' }));
 app.use((0, cookie_parser_1.default)());
+// Initialize registered plugins and extensions dynamically
+plugins_1.default.initializeAll(app).catch((err) => {
+    logger_1.logger.error('Failed to initialize plugins:', err);
+});
 // Route registrations
 app.use(`/api/${config_1.default.apiVersion}`, routes_1.default);
 // Catch 404 routes

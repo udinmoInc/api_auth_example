@@ -86,6 +86,46 @@ sequenceDiagram
 
 ---
 
+## 🔌 Plugin-Friendly Extensibility (Loose Coupling)
+
+The core authentication template functions as an unopinionated foundation. Developers can extend functionality (e.g. provision workspaces, trigger Slack notifications, create billing records, or audit logouts) dynamically **without modifying any core authentication files**.
+
+This is powered by two lightweight mechanisms:
+1. **App Extension Hooks (`authEvents` in `@/lib/events`)**: Node-native, strongly-typed lifecycle event emitters that decouple auth events from business features.
+2. **App Plugin Registry (`pluginRegistry` in `@/lib/plugins`)**: Registers custom Express extensions at boot time.
+
+### How to write a custom module/plugin
+
+Simply create your custom module file and register it with the `pluginRegistry`. It can listen to auth events and even register its own express routes dynamically:
+
+```typescript
+import { Express } from 'express';
+import { pluginRegistry, AppPlugin } from '@/lib/plugins';
+import { authEvents } from '@/lib/events';
+import logger from '@/utils/logger';
+
+export const notificationPlugin: AppPlugin = {
+  name: 'SlackNotificationPlugin',
+  init: (app: Express) => {
+    // Listen to signup events asynchronously
+    authEvents.on('signup', (user) => {
+      logger.info(`📢 Triggering welcome email & Slack message for: ${user.email}`);
+      // Integrate custom logic here...
+    });
+
+    // Mount dynamic express endpoints under this module
+    app.post('/api/v1/plugins/slack/notify', (req, res) => {
+      res.status(200).json({ success: true, message: 'Custom endpoint works!' });
+    });
+  }
+};
+
+// Auto-register
+pluginRegistry.register(notificationPlugin);
+```
+
+---
+
 ## 📁 Repository Layout
 
 ```text

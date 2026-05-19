@@ -9,6 +9,7 @@ import { SignUpInput, LoginInput, ResetPasswordInput } from './auth.validator';
 import { TokenPayload, RefreshTokenPayload, DeviceMetadata, SessionInfo } from './auth.types';
 import EmailService from '@/services/email.service';
 import logger from '@/utils/logger';
+import { authEvents } from '@/lib/events';
 
 export class AuthService {
   private repository = new AuthRepository();
@@ -68,6 +69,9 @@ export class AuthService {
       logger.error('Background verification email failed:', err);
     });
 
+    // Fire hook for external plugins (e.g. notifications, billing, workspaces)
+    authEvents.emit('signup', { userId: user.id, email: user.email, firstName: input.firstName, lastName: input.lastName });
+
     return user;
   }
 
@@ -93,6 +97,9 @@ export class AuthService {
     );
 
     await this.repository.createSession(user.id, tokenFamily, tokens.refreshToken, expiresAt, device);
+
+    // Fire login hook for audit trails and telemetry extensions
+    authEvents.emit('login', { userId: user.id, email: user.email, ipAddress: device.ipAddress, device: device.device });
 
     return {
       user,
@@ -171,9 +178,12 @@ export class AuthService {
     const GRACE_PERIOD_MS = 15000; // 15 seconds grace period
     
     if (remainingTtlMs > 0) {
+      // Ensure the grace period cache never extends the lifespan of an expiring refresh token
+      const pxExpiry = Math.min(GRACE_PERIOD_MS, remainingTtlMs);
+
       // Keep the new tokens in Redis for the first 15s so concurrent requests get the same tokens
       await redisClient.set(`blacklist:${oldRefreshToken}`, JSON.stringify(newTokens), {
-        PX: GRACE_PERIOD_MS,
+        PX: pxExpiry,
       });
     }
 
@@ -192,6 +202,9 @@ export class AuthService {
     }
 
     await this.repository.invalidateSession(session.id);
+
+    // Fire logout hook
+    authEvents.emit('logout', { userId: session.userId, sessionId: session.id });
   }
 
   public async verifyEmail(token: string) {
@@ -249,11 +262,16 @@ export class AuthService {
     // Invalidate all login sessions on password change
     await this.repository.invalidateAllSessionsForUser(user.id);
 
-    return this.repository.updateUser(user.id, {
+    const updatedUser = await this.repository.updateUser(user.id, {
       passwordHash,
       passwordResetToken: null,
       passwordResetTokenExpiresAt: null,
     });
+
+    // Fire password reset hook
+    authEvents.emit('passwordReset', { userId: user.id });
+
+    return updatedUser;
   }
 
   public async getActiveSessions(userId: string, currentSessionId: string): Promise<SessionInfo[]> {
@@ -286,6 +304,9 @@ export class AuthService {
     }
 
     await this.repository.invalidateSession(sessionId);
+
+    // Fire session revocation hook
+    authEvents.emit('sessionRevoked', { userId, sessionId });
   }
 }
 

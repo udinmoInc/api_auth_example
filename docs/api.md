@@ -142,6 +142,26 @@ This reference details the entry endpoints, required headers, schemas, response 
 
 ---
 
+### 5. Dynamic Extension Health (Plugin Endpoint Example)
+* **Endpoint**: `GET /plugins/audit-logs/health`
+* **Authentication**: None (Dynamic route loaded by registered plugins)
+* **Description**: Verifies the health and listener bindings for registered event extensions (e.g. Audit Ledger, Webhooks).
+* **Response Payload (200 OK)**:
+```json
+{
+  "status": "active",
+  "listeners": {
+    "signup": 1,
+    "login": 1,
+    "logout": 1,
+    "passwordReset": 1,
+    "sessionRevoked": 1
+  }
+}
+```
+
+---
+
 ## 🚫 Standard Unified Error Format
 
 When an operational failure, relational constraint violation, or Zod validation error occurs, the server yields a consistent, client-friendly structured JSON payload.

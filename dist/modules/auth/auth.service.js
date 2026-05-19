@@ -13,6 +13,7 @@ const redis_1 = require("@/lib/redis");
 const auth_repository_1 = require("./auth.repository");
 const email_service_1 = __importDefault(require("@/services/email.service"));
 const logger_1 = __importDefault(require("@/utils/logger"));
+const events_1 = require("@/lib/events");
 class AuthService {
     repository = new auth_repository_1.AuthRepository();
     async hashPassword(password) {
@@ -59,6 +60,8 @@ class AuthService {
         email_service_1.default.sendVerificationEmail(user.email, verificationToken).catch((err) => {
             logger_1.default.error('Background verification email failed:', err);
         });
+        // Fire hook for external plugins (e.g. notifications, billing, workspaces)
+        events_1.authEvents.emit('signup', { userId: user.id, email: user.email, firstName: input.firstName, lastName: input.lastName });
         return user;
     }
     async login(input, device) {
@@ -76,6 +79,8 @@ class AuthService {
         const expiresAt = new Date(Date.now() + refreshExpiryMs);
         const tokens = this.generateTokens({ userId: user.id, email: user.email, role: user.role, sessionId }, tokenFamily);
         await this.repository.createSession(user.id, tokenFamily, tokens.refreshToken, expiresAt, device);
+        // Fire login hook for audit trails and telemetry extensions
+        events_1.authEvents.emit('login', { userId: user.id, email: user.email, ipAddress: device.ipAddress, device: device.device });
         return {
             user,
             ...tokens,
@@ -139,9 +144,11 @@ class AuthService {
         const remainingTtlMs = session.expiresAt.getTime() - Date.now();
         const GRACE_PERIOD_MS = 15000; // 15 seconds grace period
         if (remainingTtlMs > 0) {
+            // Ensure the grace period cache never extends the lifespan of an expiring refresh token
+            const pxExpiry = Math.min(GRACE_PERIOD_MS, remainingTtlMs);
             // Keep the new tokens in Redis for the first 15s so concurrent requests get the same tokens
             await redis_1.redisClient.set(`blacklist:${oldRefreshToken}`, JSON.stringify(newTokens), {
-                PX: GRACE_PERIOD_MS,
+                PX: pxExpiry,
             });
         }
         return newTokens;
@@ -157,6 +164,8 @@ class AuthService {
             });
         }
         await this.repository.invalidateSession(session.id);
+        // Fire logout hook
+        events_1.authEvents.emit('logout', { userId: session.userId, sessionId: session.id });
     }
     async verifyEmail(token) {
         const user = await this.repository.findByVerificationToken(token);
@@ -200,11 +209,14 @@ class AuthService {
         const passwordHash = await this.hashPassword(input.password);
         // Invalidate all login sessions on password change
         await this.repository.invalidateAllSessionsForUser(user.id);
-        return this.repository.updateUser(user.id, {
+        const updatedUser = await this.repository.updateUser(user.id, {
             passwordHash,
             passwordResetToken: null,
             passwordResetTokenExpiresAt: null,
         });
+        // Fire password reset hook
+        events_1.authEvents.emit('passwordReset', { userId: user.id });
+        return updatedUser;
     }
     async getActiveSessions(userId, currentSessionId) {
         const sessions = await this.repository.findActiveSessionsByUserId(userId);
@@ -233,6 +245,8 @@ class AuthService {
             });
         }
         await this.repository.invalidateSession(sessionId);
+        // Fire session revocation hook
+        events_1.authEvents.emit('sessionRevoked', { userId, sessionId });
     }
 }
 exports.AuthService = AuthService;
