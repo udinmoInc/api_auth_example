@@ -7,9 +7,6 @@ import prisma from '@/lib/prisma';
 import { TokenPayload } from '@/modules/auth/auth.types';
 import asyncHandler from '@/utils/asyncHandler';
 
-/**
- * Middleware to authenticate requests via Bearer JWT Access Token
- */
 export const authenticate = asyncHandler(async (req: Request, _res: Response, next: NextFunction) => {
   const authHeader = req.headers.authorization;
 
@@ -29,8 +26,7 @@ export const authenticate = asyncHandler(async (req: Request, _res: Response, ne
     throw new ApiError(401, 'Authentication failed. Token signature is invalid.');
   }
 
-  // Session Revocation Check (Stateful JWT Hardening):
-  // Check if session has been invalidated or revoked in PostgreSQL
+  // Cross-check session validity in DB
   const session = await prisma.session.findUnique({
     where: { id: decoded.sessionId },
   });
@@ -39,14 +35,10 @@ export const authenticate = asyncHandler(async (req: Request, _res: Response, ne
     throw new ApiError(401, 'Your session has been terminated. Please log in again.');
   }
 
-  // Attach decoded token details to req.user for down-stream access
   req.user = decoded;
   next();
 });
 
-/**
- * Middleware for Role-Based Access Control (RBAC)
- */
 export const authorize = (...allowedRoles: Role[]) => {
   return (req: Request, _res: Response, next: NextFunction) => {
     if (!req.user) {

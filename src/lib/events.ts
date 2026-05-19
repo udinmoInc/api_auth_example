@@ -4,14 +4,9 @@ import logger from '@/utils/logger';
 class SafeEventEmitter extends EventEmitter {
   constructor() {
     super();
-    // Allow substantial third-party plugin registrations without triggering memory leak warnings
     this.setMaxListeners(100);
   }
 
-  /**
-   * Safe emission wrapper executing listeners in the next tick of the event loop.
-   * This isolates core request execution from secondary plugin side-effects.
-   */
   override emit(event: string | symbol, ...args: any[]): boolean {
     process.nextTick(() => {
       try {
@@ -24,10 +19,8 @@ class SafeEventEmitter extends EventEmitter {
   }
 }
 
-// Global loose-coupling event emitter instance
 export const authEvents = new SafeEventEmitter();
 
-// Event signatures map for strict TypeScript type checking
 export interface AuthEventsMap {
   signup: (payload: { userId: string; email: string; firstName?: string; lastName?: string }) => void;
   login: (payload: { userId: string; email: string; ipAddress?: string; device?: string }) => void;

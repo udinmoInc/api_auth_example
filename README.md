@@ -1,207 +1,116 @@
-<p align="center">
-  <img src="./docs/img/banner.png" width="100%" alt="Enterprise SaaS Auth Backend Banner" style="border-radius: 8px;" />
-</p>
+# Reusable SaaS Auth Starter
 
-# 🔐 Reusable SaaS Authentication Starter Template
+A production-ready, configurable authentication template built with **Express.js**, **TypeScript**, **Prisma ORM**, **PostgreSQL**, and **Redis**. 
 
-<p align="center">
-  <a href="https://github.com/udinmoInc/api_auth_example">
-    <img src="https://img.shields.io/github/stars/udinmoInc/api_auth_example?style=for-the-badge&color=FFE082&logo=github" alt="Stars" />
-  </a>
-  <a href="https://github.com/udinmoInc/api_auth_example/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/udinmoInc/api_auth_example?style=for-the-badge&color=90CAF9&logo=git" alt="License" />
-  </a>
-  <img src="https://img.shields.io/badge/PRs-welcome-brightgreen?style=for-the-badge&color=A5D6A7" alt="PRs Welcome" />
-</p>
-
-<p align="center">
-  A production-ready, highly flexible authentication boilerplate built with <b>Express.js</b>, <b>TypeScript</b>, <b>Prisma ORM v7</b>, <b>PostgreSQL</b>, and <b>Redis</b>. Designed as an unopinionated starter template, it isolates authentication completely so you can drop it directly into any client, SaaS, or multi-tenant system.
-</p>
-
----
-
-## 🎨 Purpose & Flexibility
-
-This project is built explicitly as a **reusable authentication template**, not a fixed business schema. 
-
-* **No Opinionated Business Models**: You won't find custom e-commerce, blogging, or company-specific structures here.
-* **Open for Customization**: Fully MIT licensed, allowing you to adapt it to any architectural requirement (B2B, B2C, single-tenant, or multi-tenant).
-* **Extensible & Plugin-Friendly**: Isolates the core JWT token, session management, and authentication guards so you can plug other application modules (subscriptions, workspaces, user dashboards) directly on top.
+Rather than wrapping auth inside hardcoded e-commerce or blogging business structures, this repository is designed as a standalone, modular auth starter. It handles modern user registration, secure session tracing, token rotation, and dynamic event hooks so you can drop it directly into any client, SaaS, or multi-tenant system.
 
 ---
 
 ## 🛠️ The Tech Stack
 
-<div align="center">
-
-| Runtime | Framework | Database | Caching / Session | Validation | Security |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| ![Node.js](https://img.shields.io/badge/Node.js-2D3748?style=flat-card&logo=node.js&logoColor=61DAFB) | ![Express.js](https://img.shields.io/badge/Express.js-000000?style=flat-card&logo=express&logoColor=white) | ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=flat-card&logo=postgresql&logoColor=white) | ![Redis](https://img.shields.io/badge/Redis-DC382D?style=flat-card&logo=redis&logoColor=white) | ![Zod](https://img.shields.io/badge/Zod-3068B7?style=flat-card&logo=zod&logoColor=white) | ![JWT](https://img.shields.io/badge/JWT-000000?style=flat-card&logo=json-web-tokens&logoColor=white) |
-| ![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat-card&logo=typescript&logoColor=white) | | ![Prisma](https://img.shields.io/badge/Prisma-2D3748?style=flat-card&logo=prisma&logoColor=white) | | | ![Helmet](https://img.shields.io/badge/Helmet-000000?style=flat-card&logo=helmet&logoColor=white) |
-
-</div>
+* **Runtime & Language**: Node.js (Express), TypeScript
+* **Database & Caching**: PostgreSQL, Redis (connection timeout, exponential backoffs)
+* **ORM**: Prisma v7 (Native PG driver connection pooling)
+* **Validation & Security**: Zod, Winston (structured logger), Helmet, CORS, custom rate limiters
+* **Authentication**: Double-layer stateful JWTs (stateless signature validation, database session checks), Secure HTTP-Only cookie storage, Refresh Token Rotation (RTR) with a 15-second grace period
 
 ---
 
-## 🚀 Outstanding Security Architecture
+## 🔌 Decoupled Hook & Extension Registry
 
-* **Double-Layer Stateful JWTs**: Access tokens are signed statelessly but cross-checked against a database `Session` pool on every request, allowing instantaneous remote revokes and password updates.
-* **Token Rotation (RTR)**: Generates a brand new refresh token with every renew request. Prevents session theft and man-in-the-middle attacks.
-* **Grace-Period Race Mitigation**: Implements a 15-second cache grace period for rotated refresh tokens to prevent parallel client network requests or double-clicks from throwing accidental replay attack logouts.
-* **Secure Cookie Storage**: Refresh tokens are stored in browser cookies under strict `httpOnly`, `sameSite: 'strict'`, and `secure: true` (in production) flags, shielding against XSS and CSRF.
-* **Aggressive IP Rate-Limiting**: Global request limiting combined with strict authentication endpoint limits (10 attempts per 15 minutes) to neutralize brute-force attacks.
-* **Modern Prisma 7 Driver Adapters**: Integrates the native `@prisma/adapter-pg` driver adapter and connection pool, eliminating heavy database binaries and reducing runtime container memory footprint.
+Instead of coupling core business logic (Stripe subscriptions, user workspaces, automated onboarding, Discord webhooks) directly inside authentication routing pathways, the template exposes two lightweight, zero-dependency modules:
+
+1. **Lifecycle Event Hooks (`src/lib/events.ts`)**: A custom `SafeEventEmitter` that fires non-blocking lifecycle hooks (`signup`, `login`, `logout`, `passwordReset`, `sessionRevoked`). Listeners execute safely inside `process.nextTick` to ensure a buggy extension never holds up critical HTTP client responses.
+2. **Dynamic Extension Registry (`src/lib/plugins.ts`)**: An Express boot registry allowing developers to add plugins that dynamically hook routes, middlewares, or third-party integrations into the main pipeline at runtime.
 
 ---
 
-## 📉 Token Rotation Workflow
+## ⚙️ Config-Driven Architecture Toggles
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Client as Client App (Cookie)
-    participant API as Express Auth Gate
-    participant Redis as Redis Blacklist
-    participant DB as PostgreSQL (Session Table)
+Every advanced system is fully configurable and optional. Developers can run a lightweight dev environment without Docker or Redis dependencies, then flip toggles in staging/production.
 
-    Client->>API: POST /api/v1/auth/refresh
-    API->>Redis: Check Blacklist (Is Token Recycled?)
-    alt Token in Redis Blacklist
-        Redis-->>API: YES
-        API-->>Client: 401 Unauthorized (Block Request)
-    else Token NOT in Redis Blacklist
-        Redis-->>API: NO
-    end
-
-    API->>DB: Fetch Session by RefreshToken
-    alt RefreshToken not found on active session
-        API->>DB: Replay Check: Mark Token Family Revoked (isValid = false)
-        API-->>Client: 401 Unauthorized (Replay Attack Detected - Force Logout)
-    else Session matches and is valid
-        API->>Redis: Blacklist Old Refresh Token (expiry = remaining TTL)
-        API->>DB: Update Session with New Refresh Token & device stats
-        API-->>Client: Set Cookie (200 OK + JSON Access Token)
-    end
-```
+| Config Variable | Type | Description |
+| :--- | :--- | :--- |
+| `ENABLE_LOGGER` | Boolean | Toggles Winston system console printing. |
+| `ENABLE_TRACING` | Boolean | Wraps request threads in `AsyncLocalStorage` to append correlation IDs to logs. |
+| `ENABLE_CACHE` | Boolean | Integrates Redis token blacklist caches. When disabled, auth flows fall back cleanly to PG database checks. |
+| `ENABLE_AUDIT_LOGS`| Boolean | Dynamically registers security audit listener callbacks during Express boot. |
 
 ---
 
-## 🔌 Plugin-Friendly Extensibility (Loose Coupling)
-
-The core authentication template functions as an unopinionated foundation. Developers can extend functionality (e.g. provision workspaces, trigger Slack notifications, create billing records, or audit logouts) dynamically **without modifying any core authentication files**.
-
-This is powered by two lightweight mechanisms:
-1. **App Extension Hooks (`authEvents` in `@/lib/events`)**: Node-native, strongly-typed lifecycle event emitters that decouple auth events from business features.
-2. **App Plugin Registry (`pluginRegistry` in `@/lib/plugins`)**: Registers custom Express extensions at boot time.
-
-### How to write a custom module/plugin
-
-Simply create your custom module file and register it with the `pluginRegistry`. It can listen to auth events and even register its own express routes dynamically:
-
-```typescript
-import { Express } from 'express';
-import { pluginRegistry, AppPlugin } from '@/lib/plugins';
-import { authEvents } from '@/lib/events';
-import logger from '@/utils/logger';
-
-export const notificationPlugin: AppPlugin = {
-  name: 'SlackNotificationPlugin',
-  init: (app: Express) => {
-    // Listen to signup events asynchronously
-    authEvents.on('signup', (user) => {
-      logger.info(`📢 Triggering welcome email & Slack message for: ${user.email}`);
-      // Integrate custom logic here...
-    });
-
-    // Mount dynamic express endpoints under this module
-    app.post('/api/v1/plugins/slack/notify', (req, res) => {
-      res.status(200).json({ success: true, message: 'Custom endpoint works!' });
-    });
-  }
-};
-
-// Auto-register
-pluginRegistry.register(notificationPlugin);
-```
-
----
-
-## 📁 Repository Layout
+## 📁 Repository Structure
 
 ```text
 src/
-├── config/           # Environment parsing and type-safety validations (Zod)
-├── constants/        # Global token lifespans and auth rates
-├── lib/              # Client SDK connectors (Prisma client & Redis client)
-├── middleware/       # Custom filters (Auth guard, request tracer, rate limits)
-├── modules/          # Domain-driven slices
-│   └── auth/         # Complete controller-service-repository auth slice
-├── routes/           # Versioned API path endpoints (/api/v1)
+├── config/           # Safe environmental parsing and validation (Zod)
+├── constants/        # Centralized JWT lifespans and auth rates
+├── lib/              # Client SDK connectors (Prisma, Redis socket handlers)
+│   ├── context.ts    # AsyncLocalStorage telemetry context store
+│   ├── events.ts     # SafeEventEmitter async event hooks
+│   └── plugins.ts    # Express application plugin registrar
+├── middleware/       # Global filters (Auth guards, tracing contexts, rate limiters)
+├── modules/          # Domain slices
+│   └── auth/         # Complete CSR (Controller-Service-Repository) authentication slice
+├── plugins/          # Dynamically loaded SaaS extension plug-ins
+├── routes/           # Main routing entrypoint (/api/v1)
 ├── services/         # Mailer and global helper wrappers
-├── types/            # TypeScript request overrides
-└── utils/            # Winston logging and standardized REST payloads
+└── utils/            # Shared primitives (Custom errors, Winston logger, responses)
 ```
 
 ---
 
-## ⚙️ Quick Setup Guide
+## 🚀 Quick Start Guide
 
-### 1. Initialize Configuration
-Copy the template configuration file:
+### 1. Configure the Environment
+Copy the environment template and customize database, Redis, and SMTP parameters:
 ```bash
 cp .env.example .env
 ```
-Update `.env` with your Postgres connection strings, Redis URL, and SMTP details.
 
-### 2. Launch Local Caching & DB
-Deploy lightweight PostgreSQL and Redis databases using Docker:
+### 2. Boot Local Infrastructure
+Deploy preconfigured PostgreSQL and Redis servers locally via Docker Compose:
 ```bash
 docker-compose up -d postgres_db redis_cache
 ```
 
-### 3. Generate Database Client & Migrations
-Compile the Prisma ORM v7 client engine and run relational migrations:
+### 3. Initialize Prisma & Dependencies
+Install workspace modules, sync migrations, and generate the Prisma Client v7 driver:
 ```bash
 npm install
 npm run prisma:generate
 npm run prisma:migrate
 ```
 
-### 4. Start Hot-Reloading Development Server
+### 4. Launch the Dev Server
+Run the hot-reloading development server:
 ```bash
 npm run dev
 ```
-
-The authentication backend will boot and listen for requests at **`http://localhost:5000/api/v1`**.
+The server will start listening at **`http://localhost:5000/api/v1`**.
 
 ---
 
-## 📡 API Reference Sandbox
+## 📡 Endpoints Sandbox
 
-Use the preconfigured [api.http](./api.http) requests dashboard (fully compatible with VS Code's **REST Client** extension) to execute test runs directly inside your editor.
+A REST client config is available at [api.http](./api.http) for direct VS Code sandbox testing.
 
-<details>
-<summary><b>🔍 Expand endpoints checklist</b></summary>
-<br/>
+### Auth Methods Checklist
 
-| Method | Endpoint | Authorization | Description |
-| :--- | :--- | :--- | :--- |
-| `POST` | `/auth/register` | Public | Register new user & profile |
-| `POST` | `/auth/login` | Public | Authenticate user & issue tokens |
-| `POST` | `/auth/refresh` | Public | Rotate access & refresh tokens |
-| `POST` | `/auth/logout` | Public | Revoke session & blacklist token |
-| `GET` | `/auth/verify-email` | Public | Verify user email address |
-| `POST` | `/auth/forgot-password`| Public | Request password reset email |
-| `POST` | `/auth/reset-password` | Public | Reset password using token |
-| `GET` | `/auth/sessions` | Bearer Access | List active user device sessions |
-| `DELETE`| `/auth/sessions/:sessionId`| Bearer Access | Revoke a specific active session |
-| `GET` | `/health` | Public | System uptime & health check |
-
-</details>
+* `POST /auth/register` - Create user profile and send email verification.
+* `POST /auth/login` - Authenticate, set secure HTTP-only refresh cookie, and return access token.
+* `POST /auth/refresh` - Rotate refresh token and update session. Uses a 15-second grace period to allow concurrent tab refreshes.
+* `POST /auth/logout` - Invalidate active session and blacklist current refresh token.
+* `GET /auth/verify-email` - Confirm email validation.
+* `POST /auth/forgot-password` - Request a secure reset token mailer.
+* `POST /auth/reset-password` - Update password and invalidate all other active sessions globally.
+* `GET /auth/sessions` - Fetch list of active logged-in device profiles.
+* `DELETE /auth/sessions/:sessionId` - Remotely revoke a specific device session.
+* `GET /health` - System health check.
 
 ---
 
 ## 📄 License
-This repository is open-source and available under the **MIT License**. Feel free to fork, customize, and extend it for any SaaS or client project. For details, see the [LICENSE](./LICENSE) file.
+
+This repository is available under the **MIT License**. Feel free to fork, customize, and drop it into any commercial client or personal product.
 
 Copyright (c) 2026 APIOrbit

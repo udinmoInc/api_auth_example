@@ -9,17 +9,11 @@ export interface AppPlugin {
 class PluginRegistry {
   private plugins: AppPlugin[] = [];
 
-  /**
-   * Register a custom app extension/plugin
-   */
   public register(plugin: AppPlugin) {
     this.plugins.push(plugin);
     logger.info(`🔌 Extension Registered: [${plugin.name}]`);
   }
 
-  /**
-   * Execute the initialization scripts for all registered modules
-   */
   public async initializeAll(app: Express) {
     for (const plugin of this.plugins) {
       try {

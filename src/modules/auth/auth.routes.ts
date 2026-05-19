@@ -14,12 +14,6 @@ import {
 const router = Router();
 const controller = new AuthController();
 
-/**
- * Public Authentication Routes
- * Protected by dedicated rate-limiters and schema validators
- */
-
-// Register a new user
 router.post(
   '/register',
   authRateLimiter,
@@ -27,7 +21,6 @@ router.post(
   controller.register
 );
 
-// Sign in with credentials
 router.post(
   '/login',
   authRateLimiter,
@@ -36,26 +29,22 @@ router.post(
   controller.login
 );
 
-// Rotate Access & Refresh Tokens (Silent Renew)
 router.post(
   '/refresh',
   deviceExtractor,
   controller.refresh
 );
 
-// Terminate current session
 router.post(
   '/logout',
   controller.logout
 );
 
-// Email address verification
 router.get(
   '/verify-email',
   controller.verifyEmail
 );
 
-// Trigger password reset email link
 router.post(
   '/forgot-password',
   authRateLimiter,
@@ -63,7 +52,6 @@ router.post(
   controller.forgotPassword
 );
 
-// Perform password update using reset token
 router.post(
   '/reset-password',
   authRateLimiter,
@@ -71,19 +59,12 @@ router.post(
   controller.resetPassword
 );
 
-/**
- * Private Session Management Routes
- * Protected by authentication guard
- */
-
-// Fetch all active device sessions
 router.get(
   '/sessions',
   authenticate,
   controller.getSessions
 );
 
-// Terminate a specific device session
 router.delete(
   '/sessions/:sessionId',
   authenticate,

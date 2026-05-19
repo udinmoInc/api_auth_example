@@ -4,9 +4,6 @@ import { SignUpInput } from './auth.validator';
 import { DeviceMetadata } from './auth.types';
 
 export class AuthRepository {
-  /**
-   * Find a user by their email, including their profile details
-   */
   public async findByEmail(email: string) {
     return prisma.user.findUnique({
       where: { email },
@@ -14,9 +11,6 @@ export class AuthRepository {
     });
   }
 
-  /**
-   * Find a user by their ID, including their profile details
-   */
   public async findById(id: string) {
     return prisma.user.findUnique({
       where: { id },
@@ -24,9 +18,6 @@ export class AuthRepository {
     });
   }
 
-  /**
-   * Atomically create a user and their profile in a database transaction
-   */
   public async createUser(input: SignUpInput, passwordHash: string, verificationToken: string, expiresAt: Date) {
     return prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
@@ -51,9 +42,6 @@ export class AuthRepository {
     });
   }
 
-  /**
-   * Update generic user fields
-   */
   public async updateUser(id: string, data: Prisma.UserUpdateInput) {
     return prisma.user.update({
       where: { id },
@@ -62,31 +50,18 @@ export class AuthRepository {
     });
   }
 
-  /**
-   * Find a user by verification token
-   */
   public async findByVerificationToken(token: string) {
     return prisma.user.findUnique({
       where: { verificationToken: token },
     });
   }
 
-  /**
-   * Find a user by password reset token
-   */
   public async findByPasswordResetToken(token: string) {
     return prisma.user.findUnique({
       where: { passwordResetToken: token },
     });
   }
 
-  // ==========================================
-  // SESSION REPOSITORY OPERATIONS
-  // ==========================================
-
-  /**
-   * Create a new tracking session
-   */
   public async createSession(
     userId: string,
     tokenFamily: string,
@@ -109,27 +84,18 @@ export class AuthRepository {
     });
   }
 
-  /**
-   * Find a session by its unique ID
-   */
   public async findSessionById(id: string): Promise<Session | null> {
     return prisma.session.findUnique({
       where: { id },
     });
   }
 
-  /**
-   * Find an active session by refresh token
-   */
   public async findSessionByRefreshToken(token: string): Promise<Session | null> {
     return prisma.session.findUnique({
       where: { refreshToken: token },
     });
   }
 
-  /**
-   * Update a session
-   */
   public async updateSession(id: string, data: Prisma.SessionUpdateInput): Promise<Session> {
     return prisma.session.update({
       where: { id },
@@ -137,9 +103,6 @@ export class AuthRepository {
     });
   }
 
-  /**
-   * Invalidate a session (Revocation / Logout)
-   */
   public async invalidateSession(id: string): Promise<Session> {
     return prisma.session.update({
       where: { id },
@@ -147,9 +110,6 @@ export class AuthRepository {
     });
   }
 
-  /**
-   * Invalidate all sessions sharing the same token family (Token Replay Attack Recovery)
-   */
   public async invalidateTokenFamily(tokenFamily: string): Promise<Prisma.BatchPayload> {
     return prisma.session.updateMany({
       where: { tokenFamily },
@@ -157,9 +117,6 @@ export class AuthRepository {
     });
   }
 
-  /**
-   * Invalidate all active sessions for a user (Global Logout / Force Password Change Protection)
-   */
   public async invalidateAllSessionsForUser(userId: string): Promise<Prisma.BatchPayload> {
     return prisma.session.updateMany({
       where: { userId, isValid: true },
@@ -167,9 +124,6 @@ export class AuthRepository {
     });
   }
 
-  /**
-   * List all active sessions for a user
-   */
   public async findActiveSessionsByUserId(userId: string): Promise<Session[]> {
     return prisma.session.findMany({
       where: {
