@@ -218,4 +218,4 @@ export const authenticate = asyncHandler(async (req: Request, _res: Response, ne
 ## 📄 License
 This repository is licensed under the **MIT License**. For details, see the [LICENSE](./LICENSE) file.
 
-Copyright (c) 2026 Vijay Singh
+Copyright (c) 2026 APIOrbit

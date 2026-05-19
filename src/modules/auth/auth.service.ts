@@ -100,10 +100,23 @@ export class AuthService {
     };
   }
 
-  // Refresh token rotation with replay protection
+  // Refresh token rotation with replay protection and concurrent request grace period
   public async rotateTokens(oldRefreshToken: string, device: DeviceMetadata) {
-    const isBlacklisted = await redisClient.get(`blacklist:${oldRefreshToken}`);
-    if (isBlacklisted) {
+    const redisValue = await redisClient.get(`blacklist:${oldRefreshToken}`);
+    
+    if (redisValue) {
+      // If within 15s grace period, it contains the JSON string of the newly generated token pair.
+      // We return these cached tokens to handle concurrent refreshes seamlessly.
+      try {
+        const graceTokens = JSON.parse(redisValue);
+        if (graceTokens && graceTokens.accessToken && graceTokens.refreshToken) {
+          logger.info('🔄 Grace period hit for concurrent refresh. Returning cached tokens.');
+          return graceTokens;
+        }
+      } catch (e) {
+        // Not a JSON payload, meaning grace period expired and it's a hard blacklist
+      }
+
       logger.warn('Blocked reuse attempt on blacklisted refresh token.');
       throw new ApiError(401, 'Session has expired.');
     }
@@ -119,23 +132,15 @@ export class AuthService {
     const session = await this.repository.findSessionByRefreshToken(oldRefreshToken);
 
     // Replay detection: If token belongs to a known family but session does not match,
-    // it was already rotated. Immediately invalidate the entire family to block attacks.
+    // it was already rotated. Immediately revoke the entire family.
     if (!session) {
-      logger.warn(`REPLAY ATTACK DETECTED for user ${userId}. Revoking family: ${tokenFamily}`);
+      logger.warn(`🚨 REPLAY ATTACK DETECTED for user ${userId}. Revoking family: ${tokenFamily}`);
       await this.repository.invalidateTokenFamily(tokenFamily);
       throw new ApiError(401, 'Session revoked.');
     }
 
     if (!session.isValid || new Date() > session.expiresAt) {
       throw new ApiError(401, 'Session is invalid or expired.');
-    }
-
-    // Blacklist rotated token in Redis for its remaining lifetime
-    const remainingTtlMs = session.expiresAt.getTime() - Date.now();
-    if (remainingTtlMs > 0) {
-      await redisClient.set(`blacklist:${oldRefreshToken}`, 'true', {
-        PX: remainingTtlMs,
-      });
     }
 
     const user = await this.repository.findById(userId);
@@ -151,6 +156,7 @@ export class AuthService {
     const refreshExpiryMs = this.parseExpiryToMs(config.jwt.refreshExpiry);
     const expiresAt = new Date(Date.now() + refreshExpiryMs);
 
+    // Persist new refresh token on active database session
     await this.repository.updateSession(session.id, {
       refreshToken: newTokens.refreshToken,
       expiresAt,
@@ -160,6 +166,16 @@ export class AuthService {
       os: device.os || session.os,
       browser: device.browser || session.browser,
     });
+
+    const remainingTtlMs = session.expiresAt.getTime() - Date.now();
+    const GRACE_PERIOD_MS = 15000; // 15 seconds grace period
+    
+    if (remainingTtlMs > 0) {
+      // Keep the new tokens in Redis for the first 15s so concurrent requests get the same tokens
+      await redisClient.set(`blacklist:${oldRefreshToken}`, JSON.stringify(newTokens), {
+        PX: GRACE_PERIOD_MS,
+      });
+    }
 
     return newTokens;
   }
